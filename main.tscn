@@ -1,0 +1,86 @@
+[gd_scene load_steps=7 format=3 uid="uid://c67fghj8921backrooms"]
+
+[ext_resource type="Script" path="res://backrooms_builder.gd" id="1_builder"]
+[ext_resource type="PackedScene" path="res://player_hazmat.tscn" id="2_hazmat_player"]
+[ext_resource type="Shader" path="res://vhs_filter.gdshader" id="3_vhs"]
+
+[sub_resource type="Environment" id="Environment_backrooms"]
+background_mode = 1
+background_color = Color(0.04, 0.04, 0.01, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.42, 0.38, 0.12, 1)
+ambient_light_energy = 0.22
+tonemap_mode = 2
+tonemap_exposure = 1.05
+ssao_enabled = true
+ssao_radius = 2.0
+ssao_intensity = 3.0
+ssao_power = 2.0
+ssao_detail = 1.0
+ssao_horizon = 0.05
+glow_enabled = true
+glow_intensity = 0.4
+glow_bloom = 0.25
+glow_hdr_threshold = 0.95
+fog_enabled = true
+fog_light_color = Color(0.18, 0.16, 0.05, 1)
+fog_light_energy = 0.5
+fog_density = 0.025
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vhs"]
+shader = ExtResource("3_vhs")
+shader_parameter/lens_distortion = 0.045
+shader_parameter/chromatic_aberration = 0.002
+shader_parameter/vignette_intensity = 0.22
+shader_parameter/noise_amount = 0.022
+shader_parameter/black_fade = 0.0
+shader_parameter/motion_blur_dir = Vector2(0, 0)
+shader_parameter/focus_blur = 0.0
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_builder")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_backrooms")
+
+[node name="Corridors" type="Node3D" parent="."]
+
+[node name="HazmatPlayer" parent="." instance=ExtResource("2_hazmat_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.0, 0.1, 7.0)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="VHSOverlay" type="ColorRect" parent="UI"]
+material = SubResource("ShaderMaterial_vhs")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="HUD" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="UI/HUD"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -260.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 80.0
+grow_horizontal = 0
+mouse_filter = 2
+text = "WHERE AM I? [LEVEL 0]
+WASD - Ходьба
+Shift - Спринт
+ЛКМ - Захват мыши"

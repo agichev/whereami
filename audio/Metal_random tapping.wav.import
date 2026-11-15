@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://b7nbxp2q4iriq"
+path="res://.godot/imported/Metal_random tapping.wav-364ed827351d3ff21d5bb7f50b185b56.sample"
+
+[deps]
+
+source_file="res://audio/Metal_random tapping.wav"
+dest_files=["res://.godot/imported/Metal_random tapping.wav-364ed827351d3ff21d5bb7f50b185b56.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

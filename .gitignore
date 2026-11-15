@@ -1,0 +1,70 @@
+# Godot 4+ cache & internal editor files
+.godot/
+*.translation
+
+# Binaries, exports, installers & build artifacts
+/godot.exe
+/build/
+/installer_output/
+/templates_dl/
+/assimp_bin/
+/fbx2gltf_tool/
+rcedit.exe
+
+# Video raw MP4s (the OGV versions are used in the engine)
+*.mp4
+
+# Temporary logs, debug dumps and scratch test scripts
+*.txt
+*.trf
+*.iss
+*.vbs
+*.ps1
+patch_*.py
+update_*.py
+inspect_*.py
+inspect_*.gd
+inspect_*.gd.uid
+test_*.gd
+test_*.gd.uid
+test_*.py
+clean_*.py
+repro_*.py
+make_*.py
+snap_*.gd.uid
+snap_*.png.import
+compare_*.gd
+compare_*.gd.uid
+export_sewer_*.gd
+export_sewer_*.gd.uid
+take_kane_*.gd.uid
+
+# Temporary test screenshots
+*_ready.txt
+*_debug.txt
+*screenshot*.png
+*screenshot*.png.import
+fps_*.png
+fps_*.png.import
+fixed_*.png
+fixed_*.png.import
+final_*.png
+final_*.png.import
+hazmat_walk_*.png
+hazmat_walk_*.png.import
+new_hazmat_*.png
+new_hazmat_*.png.import
+scaled_hazmat.png
+scaled_hazmat.png.import
+civilian_live.png
+civilian_live.png.import
+in_game_*.png
+in_game_*.png.import
+test_kane_*.png.import
+
+# OS and editor temp files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+desktop.ini
