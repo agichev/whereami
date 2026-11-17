@@ -211,7 +211,7 @@ var ambient_spooky_sounds: Array = [
 ]
 
 # Уникальные атмосферные звуки для Уровня 1 (Habitable Zone - бетонный индустриальный комплекс / парковка):
-# Ни один звук не пересекается с Уровнем 0! Загружаем через AudioStreamMP3 во избежание сбоев preload
+# Ни один звук не пересекается с Уровнем 0! Грузим через load(), а не preload, чтобы не тянуть их в память сразу
 var level1_ambient_spooky_sounds: Array = []
 
 func _init_level1_audio_pool():
@@ -228,7 +228,7 @@ func _init_level1_audio_pool():
 		{"path": "res://audio/level1/robotic_groan_3.mp3", "type": "distant", "min": 22.0, "max": 40.0, "vol": 2.5}
 	]
 	for item in paths_and_data:
-		var st = AudioStreamMP3.load_from_file(item["path"])
+		var st = load(item["path"]) as AudioStream
 		if st:
 			level1_ambient_spooky_sounds.append({
 				"stream": st,

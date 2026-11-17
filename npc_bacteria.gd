@@ -79,7 +79,7 @@ func _ready():
 
 	# 1. 3D шепот человека ("hey come here" или "help me...")
 	voice_player = AudioStreamPlayer3D.new()
-	help_me_stream = AudioStreamMP3.load_from_file("res://audio/help_me.mp3")
+	help_me_stream = load("res://audio/help_me.mp3") as AudioStream
 	if help_me_stream and randf() < 0.5:
 		voice_player.stream = help_me_stream
 		voice_player.volume_db = 4.0

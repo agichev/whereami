@@ -108,7 +108,16 @@ var infinite_stamina: bool = false # Флаг бесконечной стами�
 # Фонарик игрока и звук щелчка
 var flashlight_stream = preload("res://audio/flashlight-on-off.mp3")
 var flashlight_audio_player: AudioStreamPlayer = null
-var flashlight_light: SpotLight3D = null
+var flashlight_light: SpotLight3D = null      # Горячее пятно луча с тенями
+var flashlight_spill: SpotLight3D = null      # Широкий тусклый ореол рассеянного света вокруг луча
+var flashlight_mount: Node3D = null           # Крепление "в руке": фонарь смещен от объектива камеры
+var flashlight_base_rot: Vector3 = Vector3.ZERO # Базовый прицел фонаря (луч сходится к центру взгляда)
+var flashlight_sway: Vector2 = Vector2.ZERO   # Угловая инерция луча относительно головы (рад)
+var flashlight_sway_vel: Vector2 = Vector2.ZERO
+var flashlight_warmup: float = 0.0            # Разогрев лампы после щелчка, 0..1
+var flashlight_flicker_t: float = 0.0
+const FLASHLIGHT_ENERGY: float = 3.6
+const FLASHLIGHT_SPILL_ENERGY: float = 0.35
 
 # Пул случайных персонажей (обычные гражданские люди)
 const CHARACTER_POOL: Array = [
@@ -242,7 +251,7 @@ func setup_audio_players():
 	# Звук учащенного сердцебиения при адреналине / погоне
 	heartbeat_audio_player = AudioStreamPlayer.new()
 	heartbeat_audio_player.name = "HeartbeatAudioPlayer"
-	var hb_stream = AudioStreamMP3.load_from_file("res://audio/heartbeat.mp3")
+	var hb_stream = load("res://audio/heartbeat.mp3") as AudioStream
 	if hb_stream:
 		hb_stream.loop = true
 		heartbeat_audio_player.stream = hb_stream
@@ -253,7 +262,7 @@ func setup_audio_players():
 	# Инициализация звуков зума камеры
 	zoom_in_audio = AudioStreamPlayer.new()
 	zoom_in_audio.name = "ZoomInAudio"
-	var z_in_stream = AudioStreamMP3.load_from_file("res://audio/zoom_in.mp3")
+	var z_in_stream = load("res://audio/zoom_in.mp3") as AudioStream
 	if z_in_stream:
 		zoom_in_audio.stream = z_in_stream
 	zoom_in_audio.volume_db = -4.0
@@ -261,7 +270,7 @@ func setup_audio_players():
 
 	zoom_out_audio = AudioStreamPlayer.new()
 	zoom_out_audio.name = "ZoomOutAudio"
-	var z_out_stream = AudioStreamMP3.load_from_file("res://audio/zoom_out.mp3")
+	var z_out_stream = load("res://audio/zoom_out.mp3") as AudioStream
 	if z_out_stream:
 		zoom_out_audio.stream = z_out_stream
 	zoom_out_audio.volume_db = -4.0
@@ -496,6 +505,9 @@ func _process(dt: float):
 		if vhs_node and vhs_node.material is ShaderMaterial:
 			vhs_node.material.set_shader_parameter("motion_blur_dir", mouse_angular_speed)
 			vhs_node.material.set_shader_parameter("focus_blur", focus_blur_amount)
+
+		# 6. Реалистичная работа фонарика: инерция луча, разогрев лампы, дрожь рук
+		_update_flashlight(dt, yaw_vel, pitch_vel)
 
 	if anim_skeleton and char_skeleton:
 		for item in retarget_cache:
@@ -857,18 +869,91 @@ func setup_flashlight():
 	flashlight_audio_player.volume_db = 2.0
 	add_child(flashlight_audio_player)
 
-	# Источник света фонарика (прикреплен к камере)
+	# Фонарь держат в правой руке, а смотрит игрок глазами:
+	# источник света смещен от объектива камеры, поэтому пятно никогда не совпадает
+	# с геометрическим центром кадра (как у настоящего ручного фонаря).
+	flashlight_mount = Node3D.new()
+	flashlight_mount.name = "FlashlightMount"
+	flashlight_mount.position = Vector3(0.17, -0.14, -0.05)
+	# Доворачиваем фонарь на точку в ~7 м впереди, чтобы луч сходился к центру взгляда
+	flashlight_base_rot = Vector3(atan2(0.14, 7.0), atan2(0.17, 7.0), 0.0)
+	flashlight_mount.rotation = flashlight_base_rot
+	camera.add_child(flashlight_mount)
+
+	# 1. Основной луч: теплое пятно (вольфрам/теплый LED) с мягким краем и полутенью
 	flashlight_light = SpotLight3D.new()
 	flashlight_light.name = "Flashlight"
-	flashlight_light.light_color = Color(1.0, 0.98, 0.92)
-	flashlight_light.light_energy = 2.8
-	flashlight_light.spot_range = 24.0
-	flashlight_light.spot_angle = 36.0
-	flashlight_light.spot_attenuation = 1.2
+	flashlight_light.light_color = Color(1.0, 0.94, 0.82)
+	flashlight_light.light_energy = 0.0 # Реальная яркость выставляется при разогреве лампы
+	flashlight_light.light_specular = 0.7 # Блик на мокром полу и металле остается, но не "пластиковый"
+	flashlight_light.spot_range = 26.0
+	flashlight_light.spot_angle = 26.0
+	flashlight_light.spot_attenuation = 1.3
+	flashlight_light.spot_angle_attenuation = 1.8 # Плавный край пятна вместо резкой границы конуса
 	flashlight_light.shadow_enabled = true
-	flashlight_light.shadow_bias = 0.05
+	flashlight_light.shadow_bias = 0.02 # Меньше отрыва теней от предметов
+	flashlight_light.shadow_normal_bias = 1.2
+	flashlight_light.shadow_blur = 1.6
+	flashlight_light.light_angular_distance = 2.5 # Полутень от реального размера отражателя
 	flashlight_light.visible = false # Изначально выключен
-	camera.add_child(flashlight_light)
+	flashlight_mount.add_child(flashlight_light)
+
+	# 2. Ореол: широкий тусклый свет, который настоящий фонарь рассеивает вокруг пятна
+	flashlight_spill = SpotLight3D.new()
+	flashlight_spill.name = "FlashlightSpill"
+	flashlight_spill.light_color = Color(0.92, 0.93, 1.0) # Холоднее: рассеяние на пыли и парах
+	flashlight_spill.light_energy = 0.0
+	flashlight_spill.light_specular = 0.0
+	flashlight_spill.spot_range = 14.0
+	flashlight_spill.spot_angle = 62.0
+	flashlight_spill.spot_attenuation = 1.9
+	flashlight_spill.spot_angle_attenuation = 1.2
+	flashlight_spill.shadow_enabled = false
+	flashlight_spill.visible = false
+	flashlight_mount.add_child(flashlight_spill)
+
+# Ежекадровое поведение фонарика: инерция луча, разогрев, дрожь уставшей руки
+func _update_flashlight(dt: float, yaw_vel: float, pitch_vel: float):
+	if not flashlight_mount or not flashlight_light:
+		return
+
+	var is_on = flashlight_light.visible
+
+	# 1. Разогрев: щелчок не дает мгновенную яркость (нить лампы / драйвер LED)
+	flashlight_warmup = move_toward(flashlight_warmup, 1.0 if is_on else 0.0, dt * (8.0 if is_on else 14.0))
+	if flashlight_spill:
+		flashlight_spill.visible = is_on and flashlight_warmup > 0.01
+
+	# 2. Инерция: фонарь в руке отстает от поворота головы, луч "плывет" за взглядом
+	var inertia_target = Vector2(
+		clampf(-yaw_vel * 0.05, -0.06, 0.06),
+		clampf(-pitch_vel * 0.05, -0.06, 0.06)
+	)
+	var spring_accel = (inertia_target - flashlight_sway) * 90.0 - flashlight_sway_vel * 18.0
+	flashlight_sway_vel += spring_accel * dt
+	flashlight_sway += flashlight_sway_vel * dt
+
+	# 3. Дрожь рук: слабая в покое, сильнее при усталости и во время погони
+	var fatigue = clampf(1.0 - stamina / STAMINA_MAX, 0.0, 1.0)
+	var wobble = 1.0 + fatigue * 2.0 + adrenaline_amount * 0.8
+	var idle_yaw = sin(camera_noise_time * 1.15) * 0.006 + sin(camera_noise_time * 2.7) * 0.0022
+	var idle_pitch = cos(camera_noise_time * 0.95) * 0.005 + sin(camera_noise_time * 3.1) * 0.0018
+	var breath = sin(camera_noise_time * 1.9) * 0.0018 * (1.0 + adrenaline_amount)
+	var droop = deg_to_rad(4.0) * fatigue # Уставшая рука опускает ствол фонаря вниз
+
+	flashlight_mount.rotation = flashlight_base_rot + Vector3(
+		(idle_pitch + breath) * wobble + flashlight_sway.y - droop,
+		idle_yaw * wobble + flashlight_sway.x,
+		flashlight_sway.x * 0.35 # Легкий крен при повороте кисти
+	)
+
+	# 4. Нестабильность питания и нагрева: легкое живое мерцание, без хоррор-стробоскопа
+	flashlight_flicker_t += dt
+	var flicker = 1.0 + sin(flashlight_flicker_t * 31.0) * 0.010 + sin(flashlight_flicker_t * 7.7) * 0.018
+	var ramp = smoothstep(0.0, 1.0, flashlight_warmup)
+	flashlight_light.light_energy = FLASHLIGHT_ENERGY * ramp * flicker
+	if flashlight_spill:
+		flashlight_spill.light_energy = FLASHLIGHT_SPILL_ENERGY * ramp * flicker
 
 func interact_with_door():
 	if not camera:
@@ -894,20 +979,25 @@ func interact_with_door():
 					return
 				parent_node = parent_node.get_parent()
 
+# Единая точка включения/выключения фонаря (звук щелчка только при реальном переключении)
+func _set_flashlight_enabled(on: bool):
+	if not flashlight_light:
+		return
+	if flashlight_light.visible == on:
+		return
+	flashlight_light.visible = on
+	if flashlight_audio_player:
+		flashlight_audio_player.play()
+
 func toggle_flashlight():
 	if not flashlight_light:
 		return
-	flashlight_light.visible = not flashlight_light.visible
-	if flashlight_audio_player:
-		flashlight_audio_player.play()
+	_set_flashlight_enabled(not flashlight_light.visible)
 
 func enable_flashlight_and_infinite_stamina():
 	infinite_stamina = true
 	is_in_danger_chase = true
-	if flashlight_audio_player:
-		flashlight_audio_player.play()
-	if flashlight_light:
-		flashlight_light.visible = true
+	_set_flashlight_enabled(true)
 
 func enable_infinite_stamina_only():
 	infinite_stamina = true
@@ -920,7 +1010,4 @@ func disable_infinite_stamina_only():
 func disable_flashlight_and_reset_stamina():
 	infinite_stamina = false
 	is_in_danger_chase = false
-	if flashlight_light and flashlight_light.visible:
-		if flashlight_audio_player:
-			flashlight_audio_player.play()
-		flashlight_light.visible = false
+	_set_flashlight_enabled(false)

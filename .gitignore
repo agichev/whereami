@@ -27,6 +27,7 @@ inspect_*.gd
 inspect_*.gd.uid
 test_*.gd
 test_*.gd.uid
+test_*.tscn
 test_*.py
 clean_*.py
 repro_*.py
