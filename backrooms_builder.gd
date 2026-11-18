@@ -549,10 +549,12 @@ func setup_materials():
 		var p_tex = load("res://level1_assets/puddle_shape_%d.png" % p_idx)
 		if p_tex:
 			p_mat.albedo_texture = p_tex
-		p_mat.albedo_color = Color(0.25, 0.26, 0.28, 0.85)
-		p_mat.roughness = 0.08 # Реалистичный мокрый блеск воды
-		p_mat.metallic = 0.1
+		# Прозрачная вода с легким отражением света пола: НЕ черная смола, а прозрачная влага
+		p_mat.albedo_color = Color(0.85, 0.88, 0.90, 0.22)
+		p_mat.roughness = 0.02 # Идеальный зеркальный блеск воды и отражение ламп
+		p_mat.metallic = 0.0
 		p_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		p_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 		p_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		level1_puddle_materials.append(p_mat)
 
@@ -589,18 +591,17 @@ func _process(delta):
 			_transition_to_level_1()
 
 	if player:
-		# Проверка падения сквозь noclip (если упал ниже пола на Level 0)
-		if current_level == 0:
-			if player.global_position.y < -0.6 and not is_falling_to_level89:
-				is_falling_to_level89 = true
-				fall_timer = 0.0
+		# Проверка падения сквозь noclip или провалы ниже пола (на всех уровнях с полом)
+		if player.global_position.y < -0.6 and not is_falling_to_level89:
+			is_falling_to_level89 = true
+			fall_timer = 0.0
 
-			if is_falling_to_level89:
-				fall_timer += delta
-				if fall_timer >= 3.0: # Падал 3 секунды
-					is_falling_to_level89 = false
-					_transition_to_level_89()
-					return
+		if is_falling_to_level89:
+			fall_timer += delta
+			if fall_timer >= 2.5: # Падал 2.5 секунды
+				is_falling_to_level89 = false
+				_transition_to_random_level()
+				return
 
 		var px = player.global_position.x
 		var pz = player.global_position.z
@@ -695,7 +696,7 @@ func _check_cheat_codes():
 		_cheat_spawn_door_on_wall()
 		return
 
-	# Читкод "ghi" (или "sml") - вызывает отключение света (на Уровне 1 запускает блэкаут со Смайлерами, на Уровне 0 — блэкаут комнат)
+	# Читкод "ghi" (или "sml") - вызывает отключение света (на Уровне 1 запускает блэкаут со Смайлерами, на Уровне 0 — блэкаут комнат, на Уровне -44 — блэкаут с оповещением)
 	if cheat_buffer.ends_with("ghi") or cheat_buffer.ends_with("sml"):
 		cheat_buffer = ""
 		print("[CHEAT] Trigger Blackout (ghi)")
@@ -703,6 +704,9 @@ func _check_cheat_codes():
 			_trigger_level1_blackout()
 		elif current_level == 0:
 			trigger_global_blackout()
+		elif current_level == -44:
+			if level44_generator and is_instance_valid(level44_generator) and level44_generator.has_method("trigger_blackout_event"):
+				level44_generator.trigger_blackout_event()
 		return
 
 	if current_level == 0:
@@ -2092,11 +2096,14 @@ func _setup_level_0():
 		ambience_player.volume_db = -4.0
 		ambience_player.play()
 
-	current_player_chunk = Vector2i(0, 0)
+	# Случайный стартовый чанк для разнообразия
+	var rand_cx = randi_range(-20, 20)
+	var rand_cz = randi_range(-20, 20)
+	current_player_chunk = Vector2i(rand_cx, rand_cz)
 	update_chunks_around_player()
 
 	if player:
-		player.global_position = Vector3(8.0, 0.2, 8.0)
+		player.global_position = Vector3(rand_cx * CHUNK_SIZE + 8.0, 0.2, rand_cz * CHUNK_SIZE + 8.0)
 		player.velocity = Vector3.ZERO
 		player.play_getup_cutscene()
 
@@ -2239,12 +2246,16 @@ func _setup_level_1():
 	add_child(level1_audio_player)
 	level1_audio_player.play()
 
-	# Перемещаем игрока в центр чанка (0, 0) и запускаем анимацию подъема
-	current_player_chunk = Vector2i(0, 0)
+	# Перемещаем игрока на парковку (четные координаты чанков) и запускаем анимацию подъема
+	# Гарантируем, что спавн происходит в открытом зале парковки с колоннами
+	var rand_cx = randi_range(-10, 10) * 2
+	var rand_cz = randi_range(-10, 10) * 2
+	current_player_chunk = Vector2i(rand_cx, rand_cz)
 	update_chunks_around_player()
 
 	if player:
-		player.global_position = Vector3(8.0, 0.2, 8.0)
+		# Позиция по центру между колоннами в открытом пролете
+		player.global_position = Vector3(rand_cx * CHUNK_SIZE + 8.0, 0.2, rand_cz * CHUNK_SIZE + 8.0)
 		player.velocity = Vector3.ZERO
 		player.play_getup_cutscene()
 
@@ -2363,13 +2374,15 @@ func _setup_level_89():
 	# Запускаем строго эмбиент
 	_play_level89_crowd_ambience()
 
-	# 3. Перемещаем игрока на перекресток города и запускаем анимацию подъема с асфальта
-	current_player_chunk = Vector2i(0, 0)
+	# 3. Перемещаем игрока на случайный перекресток города и запускаем анимацию подъема с асфальта
+	var rand_cx = randi_range(-10, 10) * 2 # Четные координаты = улицы и перекрестки
+	var rand_cz = randi_range(-10, 10) * 2
+	current_player_chunk = Vector2i(rand_cx, rand_cz)
 	update_chunks_around_player()
 
 	if player:
 		# Позиция игрока: на тротуаре перекрестка (Y = 0.35m)
-		player.global_position = Vector3(4.5, 0.35, 4.5)
+		player.global_position = Vector3(rand_cx * CHUNK_SIZE + 4.5, 0.35, rand_cz * CHUNK_SIZE + 4.5)
 		player.velocity = Vector3.ZERO
 		player.play_getup_cutscene()
 
@@ -2516,15 +2529,18 @@ func _setup_level_minus44():
 	add_child(level44_audio_player)
 	level44_audio_player.play()
 
-	# Ставим игрока в центре первого открытого зала
 	if player:
-		player.global_position = Vector3(30.0, 0.4, 30.0)
+		# Случайный сектор комплекса (с шагом 3 секторов, где гарантированно открытый коридор)
+		var rand_gx = (randi_range(-8, 8)) * 3
+		var rand_gz = (randi_range(-8, 8)) * 3
+		var spawn_pos = Vector3(rand_gx * 60.0 + 30.0, 0.4, rand_gz * 60.0 + 30.0)
+		player.global_position = spawn_pos
 		player.velocity = Vector3.ZERO
 
 	level44_generator.player_fell_in_hole.connect(_on_level44_hole)
 	level44_generator.setup(player)
 
-	# Выход с уровня: одинокая дверь в пустом зале неподалёку от точки появления
+	# Выход с уровня: одинокая дверь в открытом зале неподалёку от случайной точки появления игрока
 	if level44_exit_door and is_instance_valid(level44_exit_door):
 		level44_exit_door.queue_free()
 	level44_exit_door = interactive_door_script.new()
@@ -2532,7 +2548,8 @@ func _setup_level_minus44():
 	level44_exit_door.level_type = 1
 	level44_exit_door.player_entered_black_void.connect(_on_door_void_entered)
 	add_child(level44_exit_door)
-	level44_exit_door.global_position = Vector3(39.0, 0.0, 30.0)
+	var door_base_pos = player.global_position if player else Vector3(30.0, 0.0, 30.0)
+	level44_exit_door.global_position = Vector3(door_base_pos.x + 9.0, 0.0, door_base_pos.z)
 	level44_exit_door.rotation.y = PI * 0.5
 
 	if player:
@@ -2972,25 +2989,27 @@ func _build_level1_open_pillars(parent: Node3D, c: Vector2i, x0: float, z0: floa
 			# По лору Backrooms все объекты из реального мира копируются зеркально
 			sign_node.scale = Vector3(-1.0, 1.0, 1.0)
 			parent.add_child(sign_node)
-	if (h % 3) != 0 and not level1_puddle_materials.is_empty():
-		var num_puddles = 1 + (h % 2)
-		for p_i in range(num_puddles):
-			var sub_h = get_hash(c.x + p_i * 13, c.y + p_i * 17, 9123)
-			var puddle_mesh = MeshInstance3D.new()
-			var pud_p = PlaneMesh.new()
-			var pud_w = 2.4 + float((sub_h >> 2) % 4) * 0.9
-			var pud_h_size = 2.0 + float((sub_h >> 4) % 4) * 0.8
-			pud_p.size = Vector2(pud_w, pud_h_size)
-			puddle_mesh.mesh = pud_p
+	# Спавн редких, широких и реалистичных луж конденсата
+	# Реже (только в 1 из 3 чанков) и максимум 1 большая лужа на чанк, чтобы не было скоплений
+	if (h % 3) == 0 and not level1_puddle_materials.is_empty():
+		var sub_h = get_hash(c.x, c.y, 9123)
+		var puddle_mesh = MeshInstance3D.new()
+		var pud_p = PlaneMesh.new()
+		# Широкие, разнообразные размеры лужи (от 4.5м до 8м в длину/ширину)
+		var pud_w = 4.5 + float((sub_h >> 2) % 5) * 0.9
+		var pud_h_size = 3.6 + float((sub_h >> 5) % 4) * 1.1
+		pud_p.size = Vector2(pud_w, pud_h_size)
+		puddle_mesh.mesh = pud_p
 
-			var mat_idx = sub_h % level1_puddle_materials.size()
-			puddle_mesh.material_override = level1_puddle_materials[mat_idx]
-			puddle_mesh.rotation.y = float(sub_h % 360) * (PI / 180.0)
+		var mat_idx = sub_h % level1_puddle_materials.size()
+		puddle_mesh.material_override = level1_puddle_materials[mat_idx]
+		puddle_mesh.rotation.y = float(sub_h % 360) * (PI / 180.0)
 
-			var puddle_x = x0 + 3.0 + float((sub_h >> 1) % 10)
-			var puddle_z = z0 + 3.0 + float((sub_h >> 3) % 10)
-			puddle_mesh.position = Vector3(puddle_x, 0.006, puddle_z)
-			parent.add_child(puddle_mesh)
+		# Располагаем ближе к середине пролета между колоннами
+		var puddle_x = x0 + 6.0 + float((sub_h >> 1) % 5)
+		var puddle_z = z0 + 6.0 + float((sub_h >> 3) % 5)
+		puddle_mesh.position = Vector3(puddle_x, 0.003, puddle_z)
+		parent.add_child(puddle_mesh)
 
 # Тип 2: Технические коридоры (настоящий лабиринт из бетона, щитков и труб)
 func _build_level1_technical_corridors(parent: Node3D, c: Vector2i, x0: float, z0: float, h: int):

@@ -33,6 +33,17 @@ var cable_mat: StandardMaterial3D
 var panel_frame_mat: StandardMaterial3D
 var panel_light_mat: StandardMaterial3D
 
+# --- Редкий эвент блэкаута и громкоговорителя (Roblox 3008 OST - Friday Theme) ---
+var blackout_active: bool = false
+var blackout_event_timer: float = 0.0
+var next_blackout_time: float = 120.0 # Первый блэкаут через 120-200 сек
+var music_scheduled: bool = false
+var music_timer: float = 0.0
+var music_speakers: Array[AudioStreamPlayer3D] = []
+
+var friday_theme_stream = preload("res://audio/friday_theme.mp3")
+var blackout_sound_stream = preload("res://audio/soundreality-sub-down-222742.mp3")
+
 # Вызывается из backrooms_builder.gd после добавления узла в сцену
 func setup(player_node: Node3D) -> void:
 	player = player_node
@@ -41,13 +52,15 @@ func setup(player_node: Node3D) -> void:
 		current_chunk = _chunk_of(player.global_position)
 	update_chunks(true)
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
 	if not player or not is_instance_valid(player):
 		return
 	var key = _chunk_of(player.global_position)
 	if key != current_chunk:
 		current_chunk = key
 		update_chunks(false)
+
+	_process_blackout_event(dt)
 
 func _chunk_of(pos: Vector3) -> Vector2i:
 	return Vector2i(int(floor(pos.x / CHUNK_SIZE)), int(floor(pos.z / CHUNK_SIZE)))
@@ -258,7 +271,7 @@ func spawn_hanging_panel_light(parent: Node3D, pos: Vector3, rot_y: float) -> vo
 	light.light_color = Color(0.88, 0.93, 1.0)
 	# Затухание мягче физического (1.0 = inverse-square): панели висят в 12–26 м над полом,
 	# при физическом затухании до бетона долетает почти ноль света и зал утопает в черноте.
-	light.light_energy = 2.4
+	light.light_energy = 0.0 if blackout_active else 2.4
 	light.omni_range = 60.0
 	light.omni_attenuation = 0.55
 	light.shadow_enabled = true
@@ -350,3 +363,144 @@ func _on_hole_body_entered(body: Node) -> void:
 		hole_triggered = true
 		print("[LEVEL -44] Player fell into a hole")
 		player_fell_in_hole.emit()
+
+# --- Логика редкого блэкаута и громкоговорителя ---
+
+func _ensure_pa_bus() -> String:
+	var bus_name = "Level44PABus"
+	var idx = AudioServer.get_bus_index(bus_name)
+	if idx == -1:
+		idx = AudioServer.bus_count
+		AudioServer.add_bus(idx)
+		AudioServer.set_bus_name(idx, bus_name)
+		AudioServer.set_bus_send(idx, "Master")
+
+		# Эффект реверберации (эхо огромного монументального бетонного комплекса)
+		var reverb = AudioEffectReverb.new()
+		reverb.room_size = 0.95
+		reverb.damping = 0.25
+		reverb.spread = 1.0
+		reverb.wet = 0.7
+		reverb.dry = 0.55
+		AudioServer.add_bus_effect(idx, reverb)
+
+		# Эффект радио/мегафона/громкоговорителя (BandPass / BandLimit фильтр)
+		var bandpass = AudioEffectBandPassFilter.new()
+		bandpass.cutoff_hz = 1650.0
+		bandpass.resonance = 0.5
+		AudioServer.add_bus_effect(idx, bandpass)
+
+		# Легкий дисторшн старых громкоговорителей
+		var dist = AudioEffectDistortion.new()
+		dist.mode = AudioEffectDistortion.MODE_OVERDRIVE
+		dist.drive = 0.2
+		dist.post_gain = 0.0
+		AudioServer.add_bus_effect(idx, dist)
+	return bus_name
+
+func trigger_blackout_event() -> void:
+	if blackout_active:
+		return
+	blackout_active = true
+	blackout_event_timer = randf_range(70.0, 110.0) # Длительность блэкаута (более минуты чисто в темноте)
+	music_scheduled = true
+	music_timer = randf_range(18.0, 24.0) # Примерно через 20 секунд включится музыка
+
+	print("[LEVEL -44] Blackout event triggered! Lights OUT.")
+
+	# Гасим свечение материала панелей
+	if panel_light_mat:
+		panel_light_mat.emission_enabled = false
+
+	# Гасим все физические источники света в панелях
+	_set_all_panel_lights(false)
+
+	# Звук отключения питания (глубокий гул / вырубание подстанции)
+	if blackout_sound_stream:
+		var sfx = AudioStreamPlayer.new()
+		sfx.stream = blackout_sound_stream
+		sfx.volume_db = 10.0
+		add_child(sfx)
+		sfx.play()
+		sfx.finished.connect(func(): if is_instance_valid(sfx): sfx.queue_free())
+
+func _set_all_panel_lights(on: bool) -> void:
+	for chunk in active_chunks.values():
+		if is_instance_valid(chunk):
+			var lights = chunk.find_children("*", "OmniLight3D", true, false)
+			for l in lights:
+				l.light_energy = 2.4 if on else 0.0
+
+func _process_blackout_event(dt: float) -> void:
+	if not blackout_active:
+		next_blackout_time -= dt
+		if next_blackout_time <= 0.0:
+			trigger_blackout_event()
+			next_blackout_time = randf_range(160.0, 300.0) # Следующий редкий блэкаут
+		return
+
+	# Если блэкаут активен:
+	if music_scheduled:
+		music_timer -= dt
+		if music_timer <= 0.0:
+			music_scheduled = false
+			_start_pa_broadcast()
+
+	blackout_event_timer -= dt
+	if blackout_event_timer <= 0.0:
+		_end_blackout_event()
+
+func _start_pa_broadcast() -> void:
+	if not friday_theme_stream or not player:
+		return
+	print("[LEVEL -44] PA Announcement: Friday Theme starting in the distance with echo...")
+
+	var bus_name = _ensure_pa_bus()
+	_stop_pa_broadcast()
+
+	# Размещаем удаленные источники звука на оптимальном расстоянии (60-90м)
+	var angles = [0.15, -PI * 0.7]
+	for a in angles:
+		var dist = randf_range(60.0, 90.0)
+		var sp_pos = player.global_position + Vector3(cos(a) * dist, randf_range(20.0, 32.0), sin(a) * dist)
+
+		var sp = AudioStreamPlayer3D.new()
+		sp.stream = friday_theme_stream
+		sp.bus = bus_name
+		sp.unit_size = 30.0
+		sp.max_distance = 350.0
+		sp.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		sp.volume_db = 4.0 # Оптимальная громкость: отчётливо слышно, но всё ещё отдалённо
+		sp.max_db = 2.0
+		sp.global_position = sp_pos
+		add_child(sp)
+		sp.play()
+		music_speakers.append(sp)
+
+func _stop_pa_broadcast() -> void:
+	for sp in music_speakers:
+		if is_instance_valid(sp):
+			sp.stop()
+			sp.queue_free()
+	music_speakers.clear()
+
+func _end_blackout_event() -> void:
+	blackout_active = false
+	music_scheduled = false
+	print("[LEVEL -44] Power restored! Lights ON.")
+
+	if panel_light_mat:
+		panel_light_mat.emission_enabled = true
+
+	_set_all_panel_lights(true)
+
+	# Плавное угасание трансляции
+	var tween = create_tween()
+	for sp in music_speakers:
+		if is_instance_valid(sp):
+			tween.tween_property(sp, "volume_db", -80.0, 4.0)
+	tween.tween_callback(Callable(self, "_stop_pa_broadcast"))
+
+func _exit_tree() -> void:
+	_stop_pa_broadcast()
+
