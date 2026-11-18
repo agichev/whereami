@@ -113,15 +113,6 @@ func _setup_door():
 		loaded_model.position = Vector3(0.42, 0.0, 0.0)
 		door_body.add_child(loaded_model)
 
-		# Во FBX дверей указана внешняя текстура (TextureLowPoly.png), которой нет в репозитории:
-		# без переопределения дверь на свежем клоне выглядит белой. Назначаем свой материал,
-		# чтобы полотно двери выглядело одинаково на любой машине.
-		var leaf_door_mat = StandardMaterial3D.new()
-		leaf_door_mat.albedo_color = Color(0.36, 0.22, 0.12) if level_type == 0 else Color(0.34, 0.36, 0.38)
-		leaf_door_mat.roughness = 0.72
-		leaf_door_mat.metallic = 0.0 if level_type == 0 else 0.55
-		for mi in loaded_model.find_children("*", "MeshInstance3D", true, false):
-			(mi as MeshInstance3D).material_override = leaf_door_mat
 	else:
 		var leaf_mesh = MeshInstance3D.new()
 		var b = BoxMesh.new()

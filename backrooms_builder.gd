@@ -41,6 +41,10 @@ var spawned_bacteria: CharacterBody3D = null
 
 # Механика Уровней и Noclip:
 var current_level: int = 0 # 0 = Level 0 (Backrooms), 1 = Level 1 (Habitable Zone), 89 = Level 89 (Urban Evening City)
+# Идёт переход между уровнями (видео-катсцена). Второй переход в это время игнорируется:
+# иначе запоздавший колбэк старого видео вызывает setup прошлого уровня поверх нового
+# (подсовывал чужие чанки и сбрасывал дальность прорисовки).
+var is_transitioning: bool = false
 var has_escaped_monster_once: bool = false # Флаг успешного побега от монстра (активирует шанс 1%)
 var noclip_chunks = {} # Чанки с отсутствующим полом (noclip)
 var is_falling_to_level89: bool = false
@@ -48,6 +52,7 @@ var fall_timer: float = 0.0
 var test_z_timer: float = -1.0 # Таймер активации noclip по читкоду (5 секунд)
 var test_level1_timer: float = -1.0 # Таймер читкода "plm" для телепортации на Level 1
 var cheat_buffer: String = ""
+var flashlight_before_cheat: bool = false
 var cheat_clear_timer: float = 0.0
 # Ассеты Уровня 89 (Urban Liminal City):
 var urban_road_straight = preload("res://urban_level89/road_1_straight.glb")
@@ -72,6 +77,13 @@ var urban_observer_scene = preload("res://urban_observer.tscn")
 var spawned_urban_observer: Node3D = null
 var urban_observer_timer: float = 0.0
 const URBAN_OBSERVER_INTERVAL: float = 18.0 # Проверка появления каждые 18 секунд
+
+# Уровень -44: бесконечный монументальный бетонный комплекс (порт карты "Project 546")
+var level44_script = preload("res://level_minus44.gd")
+var level44_generator: Node3D = null
+var level44_exit_door: Node3D = null
+var level44_audio_player: AudioStreamPlayer = null
+var level44_ost_stream = preload("res://audio/level44_night_theme.ogg")
 
 # Ассеты Уровня 1 (Level 1: Habitable Zone - Бетонный склад/парковка с лужами и мерцающими лампами):
 var level1_pillar_model = preload("res://level1_assets/GLB/MOD_21_Pillar_Square.glb")
@@ -596,7 +608,9 @@ func _process(delta):
 		var chunk_z = int(floor(pz / CHUNK_SIZE))
 		var p_chunk = Vector2i(chunk_x, chunk_z)
 
-		if p_chunk != current_player_chunk:
+		# На Уровне -44 своя генерация секторов: стриминг чанков других уровней только мешает
+		# (иначе поверх бетонного комплекса достраивались стены Уровня 0 и игрок стоял внутри них)
+		if p_chunk != current_player_chunk and current_level != -44:
 			current_player_chunk = p_chunk
 			update_chunks_around_player()
 
@@ -626,7 +640,7 @@ func _input(event: InputEvent):
 			KEY_J: "j", KEY_I: "i", KEY_L: "l", KEY_K: "k",
 			KEY_Y: "y", KEY_O: "o", KEY_U: "u", KEY_P: "p",
 			KEY_M: "m", KEY_S: "s", KEY_G: "g", KEY_H: "h",
-			KEY_E: "e", KEY_W: "w"
+			KEY_E: "e", KEY_W: "w", KEY_F: "f"
 		}
 
 		if key_to_char.has(event.keycode):
@@ -640,7 +654,7 @@ func _input(event: InputEvent):
 				"о": "j", "ш": "i", "д": "l", "л": "k",
 				"н": "y", "щ": "o", "г": "u", "з": "p",
 				"ь": "m", "ы": "s", "п": "g", "р": "h",
-				"у": "e", "ц": "w"
+				"у": "e", "ц": "w", "а": "f"
 			}
 			if ru_to_en.has(c):
 				char_typed = ru_to_en[c]
@@ -648,6 +662,8 @@ func _input(event: InputEvent):
 				char_typed = c
 
 		if char_typed != "":
+			if cheat_buffer == "" and player and player.get("flashlight_light"):
+				flashlight_before_cheat = player.flashlight_light.visible
 			cheat_buffer += char_typed
 			cheat_clear_timer = 3.0 # Сброс буфера если не печатали 3 сек
 			_check_cheat_codes()
@@ -658,6 +674,18 @@ func _check_cheat_codes():
 		cheat_buffer = ""
 		print("[CHEAT] Play random song on Level 89 (opl)")
 		play_random_level89_song()
+		return
+
+	# Читкод "lhm" (или "lfm") - телепорт на Уровень -44 (монументальный бетонный комплекс)
+	if cheat_buffer.ends_with("lhm") or cheat_buffer.ends_with("lfm"):
+		var typed_f := cheat_buffer.ends_with("lfm")
+		cheat_buffer = ""
+		# Клавиша F в игре переключает фонарик, поэтому при наборе "lfm" он переключается.
+		# Возвращаем фонарь в то состояние, что было до набора чита.
+		if typed_f and player and player.has_method("_set_flashlight_enabled"):
+			player._set_flashlight_enabled(flashlight_before_cheat)
+		print("[CHEAT] Go to Level -44 (lhm)")
+		_transition_to_level_minus44()
 		return
 
 	# 6. Читкод "klm" - спавнит дверь по направлению взгляда на ближайшей стене
@@ -1068,6 +1096,14 @@ func spawn_hazmat_behind_player() -> bool:
 	hey_player.play()
 
 	return true
+
+# Дальность прорисовки берём из настройки игрока, а не жёстко зашитым числом:
+# иначе при повторном заходе на уровень она падала до минимума (5 -> 2).
+func _render_distance_from_settings() -> int:
+	var gs = preload("res://game_settings.gd").instance
+	if gs:
+		return gs.chunk_render_distance
+	return view_radius
 
 func _on_settings_changed():
 	var gs = preload("res://game_settings.gd").instance
@@ -1949,8 +1985,12 @@ func _spawn_one_smiler():
 
 # Переход на Уровень 0 (The Lobby / Желтые комнаты Backrooms)
 func _transition_to_level_0():
+	if is_transitioning:
+		return
+	is_transitioning = true
 	current_level = 0
 	has_escaped_monster_once = false
+	_teardown_level_minus44()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2019,7 +2059,8 @@ func _transition_to_level_0():
 	vp.play()
 
 func _setup_level_0():
-	view_radius = 2 # Возвращаем дальность прорисовки Level 0
+	is_transitioning = false
+	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
 		var env = Environment.new()
@@ -2061,7 +2102,7 @@ func _setup_level_0():
 
 # Переход на случайный уровень кроме текущего (при провале в дверь/пустоту)
 func _transition_to_random_level():
-	var available_levels = [0, 1, 89]
+	var available_levels = [0, 1, 89, -44]
 	available_levels.erase(current_level)
 	if available_levels.is_empty():
 		return
@@ -2071,12 +2112,17 @@ func _transition_to_random_level():
 		0: _transition_to_level_0()
 		1: _transition_to_level_1()
 		89: _transition_to_level_89()
+		-44: _transition_to_level_minus44()
 
 # Переход на Уровень 89 через видео-катсцену (как при смерти от монстра)
 # Переход на Уровень 1 (Habitable Zone / Пустой паркинг/склад)
 func _transition_to_level_1():
+	if is_transitioning:
+		return
+	is_transitioning = true
 	current_level = 1
 	has_escaped_monster_once = false
+	_teardown_level_minus44()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2144,7 +2190,8 @@ func _transition_to_level_1():
 
 func _setup_level_1():
 	# Настройка Уровня 1 (Бесконечная пустая парковка / склад)
-	view_radius = 4 # Дальность прорисовки 9х9 чанков
+	is_transitioning = false
+	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
 		var env = Environment.new()
@@ -2202,8 +2249,12 @@ func _setup_level_1():
 		player.play_getup_cutscene()
 
 func _transition_to_level_89():
+	if is_transitioning:
+		return
+	is_transitioning = true
 	current_level = 89
 	has_escaped_monster_once = false
+	_teardown_level_minus44()
 
 	# Замораживаем игрока на время видео
 	if player:
@@ -2256,7 +2307,8 @@ func _transition_to_level_89():
 
 func _setup_level_89():
 	# Настройка бесконечного лиминального вечернего города Level 89
-	view_radius = 5 # Дальность прорисовки городских кварталов (квадрат 11х11 чанков)
+	is_transitioning = false
+	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
 		var env = Environment.new()
@@ -2319,6 +2371,171 @@ func _setup_level_89():
 		# Позиция игрока: на тротуаре перекрестка (Y = 0.35m)
 		player.global_position = Vector3(4.5, 0.35, 4.5)
 		player.velocity = Vector3.ZERO
+		player.play_getup_cutscene()
+
+# Полная уборка Уровня -44 при переходе на любой другой уровень
+func _teardown_level_minus44():
+	if level44_generator and is_instance_valid(level44_generator):
+		level44_generator.queue_free()
+	level44_generator = null
+	if level44_exit_door and is_instance_valid(level44_exit_door):
+		level44_exit_door.queue_free()
+	level44_exit_door = null
+	if level44_audio_player and is_instance_valid(level44_audio_player):
+		level44_audio_player.stop()
+
+# Переход на Уровень -44 (монументальный бетонный комплекс)
+func _transition_to_level_minus44():
+	if is_transitioning:
+		return
+	is_transitioning = true
+	current_level = -44
+	has_escaped_monster_once = false
+
+	# Замораживаем игрока на время перехода
+	if player:
+		player.is_active = false
+		player.velocity = Vector3.ZERO
+		if player.visual_root:
+			player.visual_root.visible = false
+		if player.head_shadow_mesh:
+			player.head_shadow_mesh.visible = false
+
+	# Удаляем NPC/монстров предыдущего уровня
+	if spawned_npc and is_instance_valid(spawned_npc):
+		spawned_npc.queue_free()
+		spawned_npc = null
+	if spawned_bacteria and is_instance_valid(spawned_bacteria):
+		spawned_bacteria.queue_free()
+		spawned_bacteria = null
+	if spawned_urban_observer and is_instance_valid(spawned_urban_observer):
+		spawned_urban_observer.queue_free()
+		spawned_urban_observer = null
+	for s in spawned_smilers:
+		if is_instance_valid(s):
+			s.queue_free()
+	spawned_smilers.clear()
+
+	# Останавливаем звуки предыдущих уровней
+	if ambience_player:
+		ambience_player.stop()
+	if level1_audio_player and is_instance_valid(level1_audio_player):
+		level1_audio_player.stop()
+	if level89_audio_player and is_instance_valid(level89_audio_player):
+		level89_audio_player.stop()
+
+	# Очищаем чанки предыдущего уровня
+	for c in active_chunks.keys():
+		var cn = active_chunks[c]
+		if is_instance_valid(cn):
+			cn.queue_free()
+	active_chunks.clear()
+	active_omni_lights.clear()
+	active_lamp_meshes.clear()
+	# И всё, что осталось под корневым узлом чанков
+	if corridors_root:
+		for ch in corridors_root.get_children():
+			ch.queue_free()
+
+	# Видео-переход, как и на остальных уровнях
+	var ui = find_child("UI", true, false)
+	if not ui:
+		_setup_level_minus44()
+		return
+
+	var vp = VideoStreamPlayer.new()
+	vp.name = "NoclipTransitionPlayer"
+	vp.expand = true
+	vp.anchor_right = 1.0
+	vp.anchor_bottom = 1.0
+	vp.stream = load("res://death_jumpscare.ogv")
+	vp.volume_db = 8.0
+	vp.z_index = 100
+	ui.add_child(vp)
+
+	vp.finished.connect(func():
+		vp.queue_free()
+		_setup_level_minus44()
+	)
+	vp.play()
+
+# Провал в дыру на Уровне -44: выбрасывает на случайный другой уровень
+func _on_level44_hole():
+	print("[LEVEL -44] Hole transition")
+	_transition_to_random_level()
+
+func _setup_level_minus44():
+	# Настройка Уровня -44: бесконечный монументальный бетонный комплекс
+	is_transitioning = false
+	current_level = -44
+	var env_node = get_node_or_null("WorldEnvironment")
+	if env_node:
+		var env = Environment.new()
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.01, 0.01, 0.011)
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		# Мягкая общая засветка: без неё 180-метровые стены и бетонный пол абсолютно чёрные
+		env.ambient_light_color = Color(0.16, 0.16, 0.155)
+		env.ambient_light_energy = 0.4
+		env.tonemap_mode = Environment.TONE_MAPPER_ACES
+		env.tonemap_exposure = 1.0
+		env.ssao_enabled = true
+		env.ssao_radius = 2.0
+		env.ssao_intensity = 3.0
+		env.glow_enabled = true
+		env.glow_intensity = 0.7
+		env.glow_bloom = 0.15
+		env.fog_enabled = true
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_light_color = Color(0.022, 0.022, 0.021)
+		env.fog_light_energy = 0.45
+		env.fog_density = 0.017
+		env.fog_depth_begin = 5.0
+		env.fog_depth_end = 80.0
+		env_node.environment = env
+
+	var old_moon = get_node_or_null("EveningCityLight")
+	if old_moon:
+		old_moon.queue_free()
+
+	# Генератор карты: сам подгружает и выгружает сектора вокруг игрока
+	if level44_generator and is_instance_valid(level44_generator):
+		level44_generator.queue_free()
+	level44_generator = level44_script.new()
+	level44_generator.name = "Level44Complex"
+	add_child(level44_generator)
+
+	# Гул огромного пустого бетонного зала
+	if level44_audio_player and is_instance_valid(level44_audio_player):
+		level44_audio_player.queue_free()
+	level44_audio_player = AudioStreamPlayer.new()
+	level44_audio_player.name = "Level44Ambience"
+	level44_audio_player.stream = level44_ost_stream
+	level44_audio_player.volume_db = linear_to_db(0.3)
+	level44_audio_player.finished.connect(func(): if current_level == -44: level44_audio_player.play())
+	add_child(level44_audio_player)
+	level44_audio_player.play()
+
+	# Ставим игрока в центре первого открытого зала
+	if player:
+		player.global_position = Vector3(30.0, 0.4, 30.0)
+		player.velocity = Vector3.ZERO
+
+	level44_generator.player_fell_in_hole.connect(_on_level44_hole)
+	level44_generator.setup(player)
+
+	# Выход с уровня: одинокая дверь в пустом зале неподалёку от точки появления
+	if level44_exit_door and is_instance_valid(level44_exit_door):
+		level44_exit_door.queue_free()
+	level44_exit_door = interactive_door_script.new()
+	level44_exit_door.name = "Level44ExitDoor"
+	level44_exit_door.level_type = 1
+	level44_exit_door.player_entered_black_void.connect(_on_door_void_entered)
+	add_child(level44_exit_door)
+	level44_exit_door.global_position = Vector3(39.0, 0.0, 30.0)
+	level44_exit_door.rotation.y = PI * 0.5
+
+	if player:
 		player.play_getup_cutscene()
 
 # Генерация бесконечного вечернего города Level 89
