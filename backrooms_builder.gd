@@ -41,6 +41,12 @@ var spawned_bacteria: CharacterBody3D = null
 
 # Механика Уровней и Noclip:
 var current_level: int = 0 # 0 = Level 0 (Backrooms), 1 = Level 1 (Habitable Zone), 89 = Level 89 (Urban Evening City)
+# Логирование уровней, в которых игрок уже побывал за прохождение:
+# при случайной телепортации (через дверь или сквозь пол) шанс попасть на
+# НОВЫЙ уровень выше, чем на уже посещённый.
+var visited_levels: Array[int] = [0] # Игрок стартует на Уровне 0
+const NEW_LEVEL_WEIGHT: float = 10.0 # Вес шанса на непосещённый уровень
+const VISITED_LEVEL_WEIGHT: float = 1.0 # Вес шанса на уже посещённый уровень
 # Идёт переход между уровнями (видео-катсцена). Второй переход в это время игнорируется:
 # иначе запоздавший колбэк старого видео вызывает setup прошлого уровня поверх нового
 # (подсовывал чужие чанки и сбрасывал дальность прорисовки).
@@ -2064,6 +2070,7 @@ func _transition_to_level_0():
 
 func _setup_level_0():
 	is_transitioning = false
+	_mark_level_visited(0)
 	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
@@ -2107,13 +2114,32 @@ func _setup_level_0():
 		player.velocity = Vector3.ZERO
 		player.play_getup_cutscene()
 
+# Отмечаем уровень как посещённый за прохождение (влияет на веса случайной телепортации)
+func _mark_level_visited(lvl: int):
+	if not visited_levels.has(lvl):
+		visited_levels.append(lvl)
+
 # Переход на случайный уровень кроме текущего (при провале в дверь/пустоту)
+# Шанс попасть на НОВЫЙ (ещё не посещённый) уровень выше, чем на уже посещённый:
+# веса NEW_LEVEL_WEIGHT / VISITED_LEVEL_WEIGHT (по умолчанию 10 к 1).
 func _transition_to_random_level():
-	var available_levels = [0, 1, 89, -44]
+	var available_levels: Array[int] = [0, 1, 89, -44]
 	available_levels.erase(current_level)
 	if available_levels.is_empty():
 		return
-	var chosen = available_levels[randi() % available_levels.size()]
+
+	var total_weight = 0.0
+	for l in available_levels:
+		total_weight += NEW_LEVEL_WEIGHT if not visited_levels.has(l) else VISITED_LEVEL_WEIGHT
+
+	var roll = randf() * total_weight
+	var chosen = available_levels[0]
+	for l in available_levels:
+		roll -= NEW_LEVEL_WEIGHT if not visited_levels.has(l) else VISITED_LEVEL_WEIGHT
+		if roll <= 0.0:
+			chosen = l
+			break
+
 	print("[DOOR TELEPORT] From Level %d to Level %d" % [current_level, chosen])
 	match chosen:
 		0: _transition_to_level_0()
@@ -2198,6 +2224,7 @@ func _transition_to_level_1():
 func _setup_level_1():
 	# Настройка Уровня 1 (Бесконечная пустая парковка / склад)
 	is_transitioning = false
+	_mark_level_visited(1)
 	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
@@ -2319,6 +2346,7 @@ func _transition_to_level_89():
 func _setup_level_89():
 	# Настройка бесконечного лиминального вечернего города Level 89
 	is_transitioning = false
+	_mark_level_visited(89)
 	view_radius = _render_distance_from_settings()
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
@@ -2480,6 +2508,7 @@ func _on_level44_hole():
 func _setup_level_minus44():
 	# Настройка Уровня -44: бесконечный монументальный бетонный комплекс
 	is_transitioning = false
+	_mark_level_visited(-44)
 	current_level = -44
 	var env_node = get_node_or_null("WorldEnvironment")
 	if env_node:
@@ -2487,11 +2516,11 @@ func _setup_level_minus44():
 		env.background_mode = Environment.BG_COLOR
 		env.background_color = Color(0.01, 0.01, 0.011)
 		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		# Мягкая общая засветка: без неё 180-метровые стены и бетонный пол абсолютно чёрные
-		env.ambient_light_color = Color(0.16, 0.16, 0.155)
-		env.ambient_light_energy = 0.4
+		# Мягкая общая засветка: слегка приглушена для давящей атмосферы полумрака
+		env.ambient_light_color = Color(0.12, 0.12, 0.12)
+		env.ambient_light_energy = 0.18
 		env.tonemap_mode = Environment.TONE_MAPPER_ACES
-		env.tonemap_exposure = 1.0
+		env.tonemap_exposure = 0.95
 		env.ssao_enabled = true
 		env.ssao_radius = 2.0
 		env.ssao_intensity = 3.0

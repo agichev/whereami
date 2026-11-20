@@ -15,6 +15,8 @@ var window_resolution: Vector2i = Vector2i(1920, 1080)
 var vsync_enabled: bool = true
 var max_fps: int = 60 # 0 = Unlimited, 30, 60, 120, 144, 240
 var chunk_render_distance: int = 5 # Радиус чанков (от 2 до 8, по умолчанию 5)
+var graphics_backend: String = "Vulkan" # "Vulkan" или "OpenGL"
+var graphics_backend_changed: bool = false # Смена бэкенда требует перезапуска приложения
 
 # Музыка меню "Warm Nights" (сохраняет позицию воспроизведения между главным меню и меню паузы Esc)
 var menu_music_player: AudioStreamPlayer = null
@@ -116,6 +118,7 @@ func save_settings():
 	cfg.set_value("settings", "vsync_enabled", vsync_enabled)
 	cfg.set_value("settings", "max_fps", max_fps)
 	cfg.set_value("settings", "chunk_render_distance", chunk_render_distance)
+	cfg.set_value("settings", "graphics_backend", graphics_backend)
 	cfg.save("user://settings.cfg")
 
 func load_settings():
@@ -134,4 +137,34 @@ func load_settings():
 		vsync_enabled = cfg.get_value("settings", "vsync_enabled", true)
 		max_fps = cfg.get_value("settings", "max_fps", 60)
 		chunk_render_distance = cfg.get_value("settings", "chunk_render_distance", 5)
+		graphics_backend = cfg.get_value("settings", "graphics_backend", "Vulkan")
 	apply_settings()
+
+# Перезапуск приложения с выбранным рендером (Forward+/Vulkan или Compatibility/OpenGL).
+# Смена бэкенда невозможна на живом рендере, поэтому нужен новый процесс.
+func restart_with_backend(backend: String):
+	graphics_backend = backend
+	graphics_backend_changed = true
+	save_settings()
+	print("Restarting with rendering backend: ", backend)
+
+	var args := ["--path", ProjectSettings.globalize_path("res://")]
+	if backend == "OpenGL":
+		args.append("--rendering-method")
+		args.append("gl_compatibility")
+		args.append("--rendering-driver")
+		args.append("opengl3")
+	else:
+		args.append("--rendering-method")
+		args.append("forward_plus")
+		args.append("--rendering-driver")
+		args.append("vulkan")
+
+	var exe := OS.get_executable_path()
+	var pid := OS.create_process(exe, args)
+	if pid == 0:
+		push_error("Не удалось перезапустить игру с бэкендом " + backend)
+		graphics_backend_changed = false
+	else:
+		# Новый процесс запущен — закрываем текущий
+		get_tree().quit()

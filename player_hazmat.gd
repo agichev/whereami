@@ -614,6 +614,15 @@ func play_getup_cutscene():
 
 	await get_tree().create_timer(1.4).timeout
 	
+	# Живая ручная камера поверх анимации: дыхание и микродрожь из обычного режима (_process).
+	# Отдельный слой на Camera3D — оригинальные tween-ы head_pivot не трогаем.
+	var sway_loop = create_tween().set_loops()
+	sway_loop.tween_property(camera, "position:y", 0.004, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	sway_loop.tween_property(camera, "position:y", -0.004, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var roll_loop = create_tween().set_loops()
+	roll_loop.tween_property(camera, "rotation:z", deg_to_rad(0.4), 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	roll_loop.tween_property(camera, "rotation:z", deg_to_rad(-0.4), 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	
 	# Фаза 2: 1.4с - 3.0с: Приподнимается на локтях / руках, оглядывает пол и стены
 	var tw1 = create_tween().set_parallel(true)
 	tw1.tween_property(head_pivot, "position:y", 0.65, 1.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
@@ -626,7 +635,18 @@ func play_getup_cutscene():
 	tw2.tween_property(head_pivot, "position:y", 1.60, 1.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw2.tween_property(head_pivot, "rotation:x", deg_to_rad(0), 1.6).set_trans(Tween.TRANS_CUBIC)
 	tw2.tween_property(head_pivot, "rotation:z", deg_to_rad(0), 1.6).set_trans(Tween.TRANS_SINE)
+	# Легкий "кивок" от усилия в момент толчка (как у реального человека, встающего с пола)
+	var effort_tw = create_tween()
+	effort_tw.tween_property(camera, "rotation:x", deg_to_rad(1.2), 0.25).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	effort_tw.tween_property(camera, "rotation:x", 0.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	await tw2.finished
+	
+	# Останавливаем слой микродрожи и возвращаем камере нейтральную позицию
+	sway_loop.kill()
+	roll_loop.kill()
+	effort_tw.kill()
+	camera.position = Vector3.ZERO
+	camera.rotation = Vector3.ZERO
 	
 	camera_pitch = 0.0
 	head_pivot.position = Vector3(0, 1.55, 0)

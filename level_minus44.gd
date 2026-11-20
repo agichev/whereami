@@ -101,7 +101,7 @@ func setup_materials() -> void:
 	panel_light_mat.albedo_color = Color(0.85, 0.9, 1.0)
 	panel_light_mat.emission_enabled = true
 	panel_light_mat.emission = Color(0.85, 0.92, 1.0)
-	panel_light_mat.emission_energy_multiplier = 2.8
+	panel_light_mat.emission_energy_multiplier = 1.2
 
 # Открытые залы: сеть широких залов, между ними монолитные блоки из закрытых секторов
 func is_open_space(wx: float, wz: float) -> bool:
@@ -269,11 +269,9 @@ func spawn_hanging_panel_light(parent: Node3D, pos: Vector3, rot_y: float) -> vo
 
 	var light = OmniLight3D.new()
 	light.light_color = Color(0.88, 0.93, 1.0)
-	# Затухание мягче физического (1.0 = inverse-square): панели висят в 12–26 м над полом,
-	# при физическом затухании до бетона долетает почти ноль света и зал утопает в черноте.
-	light.light_energy = 0.0 if blackout_active else 2.4
-	light.omni_range = 60.0
-	light.omni_attenuation = 0.55
+	light.light_energy = 0.0 if blackout_active else 0.85
+	light.omni_range = 42.0
+	light.omni_attenuation = 0.85
 	light.shadow_enabled = true
 	light.shadow_bias = 0.15
 	light.shadow_normal_bias = 2.0
@@ -429,7 +427,7 @@ func _set_all_panel_lights(on: bool) -> void:
 		if is_instance_valid(chunk):
 			var lights = chunk.find_children("*", "OmniLight3D", true, false)
 			for l in lights:
-				l.light_energy = 2.4 if on else 0.0
+				l.light_energy = 0.85 if on else 0.0
 
 func _process_blackout_event(dt: float) -> void:
 	if not blackout_active:
@@ -449,6 +447,34 @@ func _process_blackout_event(dt: float) -> void:
 	blackout_event_timer -= dt
 	if blackout_event_timer <= 0.0:
 		_end_blackout_event()
+	else:
+		_update_music_speakers_stalking(dt)
+
+func _update_music_speakers_stalking(dt: float) -> void:
+	if not player or music_speakers.is_empty():
+		return
+
+	var p_pos = player.global_position
+	# Если игрок убегает дальше 75м от источников — они плавно перемещаются за ним в темноте,
+	# не давая оторваться и оставаясь на давящей жуткой дистанции 50-70м с эхом
+	for sp in music_speakers:
+		if is_instance_valid(sp):
+			var to_sp = sp.global_position - p_pos
+			to_sp.y = 0.0
+			var dist = to_sp.length()
+
+			if dist > 75.0:
+				# Источник сокращает дистанцию, преследуя игрока через систему комплекса
+				var desired_dir = to_sp.normalized()
+				var target_pos = p_pos + desired_dir * 60.0
+				target_pos.y = sp.global_position.y # Сохраняем высоту под потолком
+				sp.global_position = sp.global_position.lerp(target_pos, 2.5 * dt)
+			elif dist < 35.0:
+				# Если игрок сам бежит навстречу источнику — звук слегка отступает назад в глубину зала, сохраняя атмосферу отдаленности
+				var desired_dir = to_sp.normalized()
+				var target_pos = p_pos + desired_dir * 45.0
+				target_pos.y = sp.global_position.y
+				sp.global_position = sp.global_position.lerp(target_pos, 2.0 * dt)
 
 func _start_pa_broadcast() -> void:
 	if not friday_theme_stream or not player:

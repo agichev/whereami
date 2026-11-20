@@ -1,17 +1,18 @@
 extends Control
 
-@onready var volume_slider: HSlider = $CenterContainer/Panel/MarginContainer/VBoxContainer/VolRow/HSlider
-@onready var sens_slider: HSlider = $CenterContainer/Panel/MarginContainer/VBoxContainer/SensRow/HSlider
-@onready var fov_slider: HSlider = $CenterContainer/Panel/MarginContainer/VBoxContainer/FovRow/HSlider
-@onready var fov_val_label: Label = $CenterContainer/Panel/MarginContainer/VBoxContainer/FovRow/ValueLabel
-@onready var vhs_check: CheckBox = $CenterContainer/Panel/MarginContainer/VBoxContainer/VhsRow/CheckBox
-@onready var fs_check: CheckBox = $CenterContainer/Panel/MarginContainer/VBoxContainer/FsRow/CheckBox
-@onready var res_option: OptionButton = $CenterContainer/Panel/MarginContainer/VBoxContainer/ResRow/OptionButton
-@onready var vsync_check: CheckBox = $CenterContainer/Panel/MarginContainer/VBoxContainer/VsyncRow/CheckBox
-@onready var fps_option: OptionButton = $CenterContainer/Panel/MarginContainer/VBoxContainer/FpsRow/OptionButton
-@onready var chunk_slider: HSlider = $CenterContainer/Panel/MarginContainer/VBoxContainer/ChunkRow/HSlider
-@onready var chunk_val_label: Label = $CenterContainer/Panel/MarginContainer/VBoxContainer/ChunkRow/ValueLabel
-@onready var back_btn: Button = $CenterContainer/Panel/MarginContainer/VBoxContainer/BackButton
+@onready var volume_slider: HSlider = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VolRow/HSlider
+@onready var sens_slider: HSlider = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/SensRow/HSlider
+@onready var fov_slider: HSlider = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FovRow/HSlider
+@onready var fov_val_label: Label = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FovRow/ValueLabel
+@onready var vhs_check: CheckBox = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VhsRow/CheckBox
+@onready var fs_check: CheckBox = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FsRow/CheckBox
+@onready var res_option: OptionButton = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ResRow/OptionButton
+@onready var vsync_check: CheckBox = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VsyncRow/CheckBox
+@onready var fps_option: OptionButton = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FpsRow/OptionButton
+@onready var render_option: OptionButton = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/RenderRow/OptionButton
+@onready var chunk_slider: HSlider = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ChunkRow/HSlider
+@onready var chunk_val_label: Label = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ChunkRow/ValueLabel
+@onready var back_btn: Button = $CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/BackButton
 
 signal back_pressed
 
@@ -31,6 +32,7 @@ func _ready():
 	
 	setup_fps_dropdown()
 	setup_resolution_dropdown()
+	setup_render_dropdown()
 	
 	volume_slider.value_changed.connect(_on_volume_changed)
 	sens_slider.value_changed.connect(_on_sens_changed)
@@ -40,6 +42,7 @@ func _ready():
 	res_option.item_selected.connect(_on_res_selected)
 	vsync_check.toggled.connect(_on_vsync_toggled)
 	fps_option.item_selected.connect(_on_fps_selected)
+	render_option.item_selected.connect(_on_render_selected)
 	chunk_slider.value_changed.connect(_on_chunk_slider_changed)
 	
 	sync_from_settings()
@@ -56,6 +59,11 @@ func setup_fps_dropdown():
 			fps_option.add_item("Unlimited")
 		else:
 			fps_option.add_item(str(val) + " FPS")
+
+func setup_render_dropdown():
+	render_option.clear()
+	render_option.add_item("Forward+ (Vulkan / D3D12)")
+	render_option.add_item("Compatibility (OpenGL 3.3)")
 
 var game_settings = preload("res://game_settings.gd")
 
@@ -88,6 +96,21 @@ func sync_from_settings():
 	else:
 		fps_option.selected = 2 # default 60 FPS
 
+	# Опция рендеринга
+	if gs.graphics_backend == "OpenGL":
+		render_option.selected = 1
+	else:
+		render_option.selected = 0
+
+func _on_render_selected(index: int):
+	var gs = game_settings.instance
+	if not gs:
+		return
+	var new_backend = "Vulkan" if index == 0 else "OpenGL"
+	if new_backend == gs.graphics_backend:
+		return
+	# Применяем с перезапуском
+	gs.restart_with_backend(new_backend)
 func _on_vsync_toggled(toggled: bool):
 	var gs = game_settings.instance
 	if gs:
