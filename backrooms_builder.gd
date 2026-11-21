@@ -1566,17 +1566,16 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	# Детерминированный хэш для блока
 	var block_seed = get_hash(int(px * 10), int(pz * 10), 9192 + r * 17 + c1)
 	
-	# Шанс для блока: 1 на 10 блоков (в сочетании с радиусом 20м гарантирует регулярное появление)
-	if (block_seed % 10) != 0:
+	# Для тестов: шанс спавна рисунка увеличен (1 на 3 блока), дистанция уменьшена до 10м
+	if (block_seed % 3) != 0:
 		return
 	if vert_drawings.is_empty() and horiz_drawings.is_empty():
 		return
 
-	# Дистанционный фильтр: максимум один рисунок на 40 метров
-	# Если ближе 40 метров уже есть любой рисунок — не спавним
+	# Дистанционный фильтр: для тестов снижен с 40м до 10м
 	var cur_pos_2d = Vector2(px, pz)
 	for prev_pos in spawned_decal_positions:
-		if cur_pos_2d.distance_to(prev_pos) < 40.0:
+		if cur_pos_2d.distance_to(prev_pos) < 10.0:
 			return
 
 	# Случайная грань блока:
@@ -1652,23 +1651,24 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	parent.add_child(quad)
 	spawned_decal_positions.append(cur_pos_2d)
 
-	# Если это рисунок с надписью EXIT (user_drawing_vert_5) — добавляем интерактивную триггерную зону касания
-	if tex == vert_drawings[4]:
-		_setup_exit_drawing_interaction(parent, quad)
+	# На время тестов: любой рисунок (не только EXIT) наделяется зоной телепортации на Уровень !
+	_setup_exit_drawing_interaction(parent, quad)
 
 func _setup_exit_drawing_interaction(parent: Node3D, quad: MeshInstance3D):
 	var area = Area3D.new()
 	area.name = "ExitDrawingTouchArea"
+	area.collision_layer = 0
+	area.collision_mask = 1 | 2
 	var col = CollisionShape3D.new()
 	var box = BoxShape3D.new()
-	box.size = Vector3(1.8, 2.8, 1.4)
+	box.size = Vector3(2.2, 3.0, 1.8)
 	col.shape = box
 	area.add_child(col)
-	area.global_transform = quad.global_transform
 	parent.add_child(area)
+	area.global_transform = quad.global_transform
 
 	area.body_entered.connect(func(body):
-		if body == player or (body is CharacterBody3D and body.has_method("interact_with_door")):
+		if body == player or (body is CharacterBody3D and (body.has_method("interact_with_door") or body.is_in_group("player") or body.name.to_lower().contains("player"))):
 			_on_exit_drawing_touched()
 	)
 
@@ -2716,26 +2716,15 @@ func _setup_level_minus44():
 	if player:
 		player.play_getup_cutscene()
 
-# Обработчик касания рисунка с надписью EXIT
+# Обработчик касания рисунка (на время тестов любой рисунок телепортирует на Уровень !)
 func _on_exit_drawing_touched():
 	if current_level != 0 and current_level != 1:
 		return
 	if is_transitioning:
 		return
 
-	var current_time = Time.get_ticks_msec() / 1000.0
-	# Защита от спама триггера в один и тот же момент (интервал минимум 0.8с между касаниями)
-	if current_time - last_exit_touch_time < 0.8:
-		return
-	last_exit_touch_time = current_time
-
-	exit_drawing_touch_count += 1
-	print("[EXIT DRAWING] Touched %d time(s)" % exit_drawing_touch_count)
-
-	if exit_drawing_touch_count >= 2:
-		exit_drawing_touch_count = 0
-		print("[LEVEL !] Double touch on EXIT drawing -> Transporting to Level ! (Run For Your Life)")
-		_transition_to_level_run()
+	print("[DRAWING TOUCH] Touched drawing -> Transporting to Level ! (Run For Your Life)")
+	_transition_to_level_run()
 
 # Полная уборка Уровня ! (Run For Your Life)
 func _teardown_level_run():
