@@ -32,6 +32,7 @@ var alarm2_player: AudioStreamPlayer = null
 
 # Дыхательный ивент передышки (вдох-выдох, успокоение, ослабление красного, сердцебиение)
 var event_breath_player: AudioStreamPlayer = null
+var event_mouth_breath_player: AudioStreamPlayer = null
 var event_heartbeat_player: AudioStreamPlayer = null
 var is_breathing_event_active: bool = false
 var event_cooldown_timer: float = 8.0 # Сейчас часто для теста (8-15 сек)
@@ -121,6 +122,17 @@ func _setup_alarms():
 	event_breath_player.volume_db = 4.0
 	add_child(event_breath_player)
 
+	# Плеер постоянного дыхания ртом во время передышки (mouth-breathing)
+	event_mouth_breath_player = AudioStreamPlayer.new()
+	event_mouth_breath_player.name = "EventMouthBreath"
+	event_mouth_breath_player.stream = load("res://audio/mouth_breathing.mp3")
+	event_mouth_breath_player.volume_db = -80.0
+	event_mouth_breath_player.finished.connect(func():
+		if is_breathing_event_active and is_instance_valid(event_mouth_breath_player):
+			event_mouth_breath_player.play()
+	)
+	add_child(event_mouth_breath_player)
+
 	# Плеер приглушающего громкого сердцебиения
 	event_heartbeat_player = AudioStreamPlayer.new()
 	event_heartbeat_player.name = "EventHeartbeat"
@@ -196,6 +208,8 @@ func _exit_tree():
 		alarm2_player.stop()
 	if event_breath_player:
 		event_breath_player.stop()
+	if event_mouth_breath_player:
+		event_mouth_breath_player.stop()
 	if event_heartbeat_player:
 		event_heartbeat_player.stop()
 	if world_env_node and original_world_env:
@@ -720,15 +734,21 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 				red_relief_factor = 1.0
 				_apply_red_relief_effect(1.0)
+				# Запускаем сердцебиение и постоянное дыхание ртом (mouth-breathing)
 				if event_heartbeat_player:
 					event_heartbeat_player.volume_db = -25.0
 					event_heartbeat_player.play()
+				if event_mouth_breath_player:
+					event_mouth_breath_player.volume_db = -18.0
+					event_mouth_breath_player.play()
 
 		2:
-			# Фаза 2: В течение 2 секунд нарастает сердцебиение, а шаги игрока стихают
+			# Фаза 2: В течение 2 секунд нарастает сердцебиение и дыхание ртом, а шаги игрока стихают
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(-25.0, 5.0, t)
+			if event_mouth_breath_player:
+				event_mouth_breath_player.volume_db = lerp(-18.0, 3.5, t)
 			# Шаги игрока затухают
 			_set_player_step_volume_attenuation(lerp(0.0, -45.0, t))
 			_set_horde_volume_attenuation(-60.0)
@@ -740,9 +760,11 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 
 		3:
-			# Фаза 3: 10 секунд длится сердцебиение, звуки монстров и сирен ПОЛНОСТЬЮ заглушены, шаги неслышны
+			# Фаза 3: 10 секунд длится сердцебиение и непрерывное дыхание ртом на постоянке
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = 5.0
+			if event_mouth_breath_player:
+				event_mouth_breath_player.volume_db = 3.5
 			_set_player_step_volume_attenuation(-45.0)
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
@@ -759,6 +781,9 @@ func _process_breathing_event(delta: float):
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
+			if event_mouth_breath_player:
+				# Дыхание пока продолжает звучать на постоянке до полного возврата нормы в фазе 5
+				event_mouth_breath_player.volume_db = 3.5
 			_set_player_step_volume_attenuation(lerp(-45.0, 0.0, t))
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
@@ -771,11 +796,14 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 
 		5:
-			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму (нарастают звуки монстров, сирен, возвращается тревожный красный)
+			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму
+			# Дыхание ртом плавно затихает до выключения, нарастают звуки монстров, сирен, возвращается красный свет
 			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
 			red_relief_factor = 1.0 - t
 			_apply_red_relief_effect(red_relief_factor)
 
+			if event_mouth_breath_player:
+				event_mouth_breath_player.volume_db = lerp(3.5, -60.0, t)
 			if alarm1_player: alarm1_player.volume_db = lerp(-60.0, 2.0, t)
 			if alarm2_player: alarm2_player.volume_db = lerp(-60.0, -1.0, t)
 			_set_horde_volume_attenuation(lerp(-60.0, 0.0, t))
@@ -783,6 +811,8 @@ func _process_breathing_event(delta: float):
 
 			if event_phase_timer >= 5.0:
 				# Завершение ивента, сброс к норме
+				if event_mouth_breath_player:
+					event_mouth_breath_player.stop()
 				is_breathing_event_active = false
 				event_phase = 0
 				event_phase_timer = 0.0
@@ -797,6 +827,8 @@ func _start_breathing_event():
 	event_phase_timer = 0.0
 	red_relief_factor = 0.0
 
+	if event_mouth_breath_player:
+		event_mouth_breath_player.stop()
 	if event_breath_player:
 		event_breath_player.volume_db = 4.0
 		event_breath_player.play()
