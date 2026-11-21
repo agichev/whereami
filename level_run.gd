@@ -9,7 +9,7 @@ const LEVEL_LENGTH_METERS: float = 5000.0
 const CORRIDOR_WIDTH: float = 3.2
 const CORRIDOR_HEIGHT: float = 3.0
 const SEGMENT_LENGTH: float = 16.0
-const DOOR_SPACING: float = 8.0 # Двери по бокам каждые 8 метров
+const START_OFFSET_METERS: float = 80.0 # Сегменты коридора начинаются с Z = +80.0, чтобы за спиной не было пустоты
 
 var carpet_mat: StandardMaterial3D
 var wall_mat: StandardMaterial3D
@@ -133,9 +133,10 @@ func _process(delta: float):
 		player_reached_exit.emit()
 
 func _update_streaming(player_z: float):
-	var current_seg = int(floor(-player_z / SEGMENT_LENGTH))
-	var min_seg = max(0, current_seg - 3)
-	var max_seg = min(int(LEVEL_LENGTH_METERS / SEGMENT_LENGTH) + 1, current_seg + 8)
+	var current_seg = int(floor((-player_z + START_OFFSET_METERS) / SEGMENT_LENGTH))
+	var min_seg = max(0, current_seg - 5)
+	var total_segs = int((LEVEL_LENGTH_METERS + START_OFFSET_METERS) / SEGMENT_LENGTH) + 1
+	var max_seg = min(total_segs, current_seg + 8)
 
 	# Удаляем далекие сегменты
 	var to_remove = []
@@ -159,7 +160,7 @@ func _update_streaming(player_z: float):
 func _build_segment(seg_idx: int) -> Node3D:
 	var root = Node3D.new()
 	root.name = "Segment_%d" % seg_idx
-	var start_z = -float(seg_idx) * SEGMENT_LENGTH
+	var start_z = START_OFFSET_METERS - float(seg_idx) * SEGMENT_LENGTH
 	var center_z = start_z - SEGMENT_LENGTH * 0.5
 
 	# 1. Пол
@@ -237,7 +238,7 @@ func _build_segment(seg_idx: int) -> Node3D:
 		var light_z = start_z - l_step
 		_add_ceiling_exit_fixture(root, Vector3(0.0, CORRIDOR_HEIGHT, light_z))
 
-	# Стена позади на самом старте (Z = 0), чтобы нельзя было побежать назад
+	# Стена позади на самом дальнем сегменте сзади (Z = +START_OFFSET_METERS)
 	if seg_idx == 0:
 		var back_wall = StaticBody3D.new()
 		var bw_mesh = MeshInstance3D.new()
@@ -251,7 +252,7 @@ func _build_segment(seg_idx: int) -> Node3D:
 		bw_shape.size = bw_box.size
 		bw_col.shape = bw_shape
 		back_wall.add_child(bw_col)
-		back_wall.position = Vector3(0.0, CORRIDOR_HEIGHT * 0.5, 0.15)
+		back_wall.position = Vector3(0.0, CORRIDOR_HEIGHT * 0.5, START_OFFSET_METERS + 0.15)
 		root.add_child(back_wall)
 
 	return root
@@ -423,7 +424,7 @@ func _spawn_chasing_horde():
 	var bacteria_scene = preload("res://npc_bacteria.tscn")
 	pack_bacteria = bacteria_scene.instantiate()
 	add_child(pack_bacteria)
-	pack_bacteria.global_position = Vector3(-0.7, 0.0, 18.0)
+	pack_bacteria.global_position = Vector3(-0.7, 0.0, 21.0)
 	pack_bacteria.target_player = player
 	pack_bacteria.set_physics_process(false)
 	pack_bacteria.play_anim("Armature_001|stalkingpose", true)
@@ -432,7 +433,7 @@ func _spawn_chasing_horde():
 	var hazmat_scene = preload("res://npc_hazmat.tscn")
 	pack_hazmat = hazmat_scene.instantiate()
 	add_child(pack_hazmat)
-	pack_hazmat.global_position = Vector3(0.7, 0.0, 22.0)
+	pack_hazmat.global_position = Vector3(0.7, 0.0, 23.5)
 	pack_hazmat.target_player = player
 	pack_hazmat.trigger_aggro_chase()
 	pack_hazmat.set_physics_process(false)
@@ -442,7 +443,7 @@ func _spawn_chasing_horde():
 	var smiler_script = preload("res://smiler_enemy.gd")
 	pack_smiler = smiler_script.new()
 	add_child(pack_smiler)
-	pack_smiler.global_position = Vector3(0.0, 1.4, 15.0)
+	pack_smiler.global_position = Vector3(0.0, 1.4, 18.0)
 	pack_smiler.target_player = player
 	pack_smiler.set_physics_process(false)
 
@@ -450,65 +451,119 @@ func _process_horde(delta: float, player_z: float):
 	if is_completed or not player:
 		return
 
-	# Во время интро-катсцены орда не нападает, а ждет на безопасной дистанции 16-20 метров сзади
-	if player.is_in_cutscene or not player.is_active:
+	# Во время интро-катсцены орда не нападает, а ждет на безопасной дистанции 18-24 метров сзади
+	var in_cutscene = player.get("is_in_cutscene") == true or player.get("is_active") == false
+	if in_cutscene:
 		if pack_smiler and is_instance_valid(pack_smiler):
-			pack_smiler.global_position = Vector3(0.0, 1.4, player_z + 14.0)
+			pack_smiler.global_position = Vector3(0.0, 1.4, player_z + 18.0)
 		if pack_bacteria and is_instance_valid(pack_bacteria):
-			pack_bacteria.global_position = Vector3(-0.7, 0.0, player_z + 16.5)
+			pack_bacteria.global_position = Vector3(-0.7, 0.0, player_z + 21.0)
 		if pack_hazmat and is_instance_valid(pack_hazmat):
-			pack_hazmat.global_position = Vector3(0.7, 0.0, player_z + 18.5)
+			pack_hazmat.global_position = Vector3(0.7, 0.0, player_z + 23.5)
 		return
 
-	# Логика орды сущностей:
-	# Игрок спринтует со скоростью 6.0 м/с (бесконечная стамина).
-	# Базовая комфортная дистанция преследования — 12-16 метров сзади.
-	# Если игрок бежит вперед на спринте: сущности бегут сзади на расстоянии ~13 метров, создавая огромное напряжение и крики.
-	# Если игрок остановился или бежит медленно: сущности быстро настигают его со скоростью 7.0 м/с и убивают при дистанции < 1.4м!
+	# Логика орды:
+	# Монстры поддерживают постоянное напряжение и держат дистанцию преследования.
+	# У игрока всегда есть фора:
+	# 1) На полном спринте (скорость 6.0 м/с) игрок плавно отрывается вперед до комфортных 16-18 метров.
+	# 2) При оглядке назад на бегу, зуме камеры (скорость ~3.0 м/с) или обычной ходьбе монстры плавно сокращают дистанцию,
+	#    но НЕ убивают мгновенно — у игрока остается дистанция тревоги 5-8 метров.
+	# 3) Только если игрок буквально встал на месте (или пошел назад), монстры быстро настигают его и убивают.
+	# 4) Монстры никогда не замирают намертво — они всегда агрессивно бегут за игроком.
+
+	var player_fwd_speed = -player.velocity.z # скорость движения вперед по -Z
 	
-	var player_speed = -player.velocity.z # скорость движения вперед по -Z
-	var chase_speed = 6.8 # скорость монстров при настигании остановившегося игрока
+	# Расчет скорости монстров
+	# Базовая целевая дистанция преследования: 15 метров
+	var target_gap = 15.0
 	
-	# Обновляем позицию Smiler
+	# Обновляем позицию Smiler (авангард орды, летает по центру)
 	if pack_smiler and is_instance_valid(pack_smiler):
 		pack_smiler.global_position.x = 0.0
-		var dist_z = pack_smiler.global_position.z - player_z
-		if dist_z > 14.0:
-			pack_smiler.global_position.z = move_toward(pack_smiler.global_position.z, player_z + 13.0, 8.0 * delta)
-		elif dist_z < 12.0 and player_speed > 4.5:
-			pack_smiler.global_position.z = player_z + 12.0
+		var current_gap = pack_smiler.global_position.z - player_z
+		var smiler_speed = 0.0
+		
+		if player_fwd_speed <= 0.8:
+			# Игрок встал на месте или идет назад: монстры стремительно нападают
+			smiler_speed = 6.2
+		elif player_fwd_speed < 4.0:
+			# Игрок замедлился (зум, оглядывается назад, идет пешком):
+			# Монстры приближаются, сжимая кольцо до опасных 6 метров, но не напрыгивают намертво
+			if current_gap > 6.5:
+				smiler_speed = player_fwd_speed + 1.2
+			else:
+				smiler_speed = max(1.5, player_fwd_speed * 0.95)
 		else:
-			pack_smiler.global_position.z -= chase_speed * delta
+			# Игрок бежит на полной скорости (спринт ~6.0 м/с):
+			# Монстры держат динамичную дистанцию ~14-16м, создавая ощущение погони хвост в хвост
+			if current_gap < target_gap:
+				smiler_speed = player_fwd_speed - 0.7 # Игрок понемногу отрывается
+			elif current_gap > target_gap + 2.0:
+				smiler_speed = player_fwd_speed + 0.6 # Монстры подтягиваются
+			else:
+				smiler_speed = player_fwd_speed
+
+		# Монстры никогда не бегут назад и не стоят на месте
+		smiler_speed = max(2.5, smiler_speed)
+		pack_smiler.global_position.z -= smiler_speed * delta
 
 		if pack_smiler.global_position.distance_to(player.global_position) < 1.4:
 			_kill_player_by_horde()
 			return
 
-	# Обновляем позицию Bacteria
+	# Обновляем позицию Bacteria (слева, чуть позади смайлера)
 	if pack_bacteria and is_instance_valid(pack_bacteria):
 		pack_bacteria.global_position.x = -0.7
-		var dist_z = pack_bacteria.global_position.z - player_z
-		if dist_z > 16.0:
-			pack_bacteria.global_position.z = move_toward(pack_bacteria.global_position.z, player_z + 15.0, 8.5 * delta)
-		elif dist_z < 13.5 and player_speed > 4.5:
-			pack_bacteria.global_position.z = player_z + 13.5
+		var current_gap_b = pack_bacteria.global_position.z - player_z
+		var b_target_gap = target_gap + 2.5
+		var b_speed = 0.0
+		
+		if player_fwd_speed <= 0.8:
+			b_speed = 6.5
+		elif player_fwd_speed < 4.0:
+			if current_gap_b > 8.0:
+				b_speed = player_fwd_speed + 1.3
+			else:
+				b_speed = max(1.5, player_fwd_speed * 0.95)
 		else:
-			pack_bacteria.global_position.z -= chase_speed * delta
+			if current_gap_b < b_target_gap:
+				b_speed = player_fwd_speed - 0.6
+			elif current_gap_b > b_target_gap + 2.0:
+				b_speed = player_fwd_speed + 0.7
+			else:
+				b_speed = player_fwd_speed
+
+		b_speed = max(2.5, b_speed)
+		pack_bacteria.global_position.z -= b_speed * delta
 
 		if pack_bacteria.global_position.distance_to(player.global_position) < 1.4:
 			_kill_player_by_horde()
 			return
 
-	# Обновляем позицию Hazmat
+	# Обновляем позицию Hazmat (справа, замыкающий)
 	if pack_hazmat and is_instance_valid(pack_hazmat):
 		pack_hazmat.global_position.x = 0.7
-		var dist_z = pack_hazmat.global_position.z - player_z
-		if dist_z > 18.0:
-			pack_hazmat.global_position.z = move_toward(pack_hazmat.global_position.z, player_z + 16.5, 9.0 * delta)
-		elif dist_z < 15.0 and player_speed > 4.5:
-			pack_hazmat.global_position.z = player_z + 15.0
+		var current_gap_h = pack_hazmat.global_position.z - player_z
+		var h_target_gap = target_gap + 4.5
+		var h_speed = 0.0
+
+		if player_fwd_speed <= 0.8:
+			h_speed = 6.6
+		elif player_fwd_speed < 4.0:
+			if current_gap_h > 10.0:
+				h_speed = player_fwd_speed + 1.4
+			else:
+				h_speed = max(1.5, player_fwd_speed * 0.95)
 		else:
-			pack_hazmat.global_position.z -= chase_speed * delta
+			if current_gap_h < h_target_gap:
+				h_speed = player_fwd_speed - 0.5
+			elif current_gap_h > h_target_gap + 2.0:
+				h_speed = player_fwd_speed + 0.8
+			else:
+				h_speed = player_fwd_speed
+
+		h_speed = max(2.5, h_speed)
+		pack_hazmat.global_position.z -= h_speed * delta
 
 		if pack_hazmat.global_position.distance_to(player.global_position) < 1.4:
 			_kill_player_by_horde()
