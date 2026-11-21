@@ -34,6 +34,7 @@ var alarm2_player: AudioStreamPlayer = null
 var event_breath_player: AudioStreamPlayer = null
 var event_mouth_breath_player: AudioStreamPlayer = null
 var event_heartbeat_player: AudioStreamPlayer = null
+var event_tinnitus_player: AudioStreamPlayer = null
 var is_breathing_event_active: bool = false
 var event_cooldown_timer: float = 8.0 # Сейчас часто для теста (8-15 сек)
 var event_phase_timer: float = 0.0
@@ -42,11 +43,10 @@ var red_relief_factor: float = 0.0 # 0.0 = полный красный кошм�
 # Фазы:
 # 0 = Idle / Ожидание
 # 1 = Заглушение окружения и монстров (1.5с), плавное ослабление красного, старт глубокого вдоха-выдоха
-# 2 = Появление сердцебиения (2с), шаги стихают
-# 3 = Сердцебиение стучит (10с), звуки монстров и сирен ПОЛНОСТЬЮ заглушены, свет мягкий
-# 4 = Сердцебиение затухает, шаги возвращаются (2с)
-# 5 = Плавное возвращение тревоги, сирен, криков монстров и красного освещения в норму (5с)
-# 5 = Плавный возврат всех звуков в норму (5с)
+# 2 = Пауза 1 секунда, затем нарастание сердцебиения (2с) и запуск постоянного дыхания ртом, шаги стихают
+# 3 = Сердцебиение и дыхание ртом (10с). За 2 секунды до конца фазы начинается звон в ушах
+# 4 = Сердцебиение затухает, шаги возвращаются (2с), звон в ушах звенит в полный рост
+# 5 = Плавное возвращение тревоги, сирен, криков монстров и красного освещения в норму (5с), звон плавно затухает до конца фазы
 
 # Дверь выхода в конце коридора
 var exit_door: InteractiveDoor = null
@@ -142,6 +142,17 @@ func _setup_alarms():
 	event_heartbeat_player.finished.connect(func(): if is_breathing_event_active and is_instance_valid(event_heartbeat_player): event_heartbeat_player.play())
 	add_child(event_heartbeat_player)
 
+	# Плеер звона в ушах / контузии
+	event_tinnitus_player = AudioStreamPlayer.new()
+	event_tinnitus_player.name = "EventTinnitus"
+	event_tinnitus_player.stream = load("res://audio/zvon_v_ushah.mp3")
+	event_tinnitus_player.volume_db = -80.0
+	event_tinnitus_player.finished.connect(func():
+		if is_breathing_event_active and is_instance_valid(event_tinnitus_player):
+			event_tinnitus_player.play()
+	)
+	add_child(event_tinnitus_player)
+
 func start_level(target_player: CharacterBody3D):
 	player = target_player
 	is_completed = false
@@ -212,6 +223,8 @@ func _exit_tree():
 		event_mouth_breath_player.stop()
 	if event_heartbeat_player:
 		event_heartbeat_player.stop()
+	if event_tinnitus_player:
+		event_tinnitus_player.stop()
 	if world_env_node and original_world_env:
 		world_env_node.environment = original_world_env
 
@@ -734,33 +747,43 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 				red_relief_factor = 1.0
 				_apply_red_relief_effect(1.0)
-				# Запускаем сердцебиение и постоянное дыхание ртом (mouth-breathing)
-				if event_heartbeat_player:
-					event_heartbeat_player.volume_db = -25.0
-					event_heartbeat_player.play()
-				if event_mouth_breath_player:
-					event_mouth_breath_player.volume_db = -18.0
-					event_mouth_breath_player.play()
 
 		2:
-			# Фаза 2: В течение 2 секунд нарастает сердцебиение и дыхание ртом, а шаги игрока стихают
-			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
-			if event_heartbeat_player:
-				event_heartbeat_player.volume_db = lerp(-25.0, 5.0, t)
-			if event_mouth_breath_player:
-				event_mouth_breath_player.volume_db = lerp(-18.0, 3.5, t)
-			# Шаги игрока затухают
-			_set_player_step_volume_attenuation(lerp(0.0, -45.0, t))
+			# Фаза 2: Сначала 1 секунда задержки в тишине после первого дыхания.
+			# Затем включается второй звук дыхания ртом (mouth-breathing) и нарастает сердцебиение (2 сек),
+			# а шаги игрока стихают.
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
 			if alarm2_player: alarm2_player.volume_db = -60.0
 
-			if event_phase_timer >= 2.0:
+			if event_phase_timer < 1.0:
+				# 1 секунда паузы / тишины перед вторым звуком дыхания
+				_set_player_step_volume_attenuation(0.0)
+			else:
+				var sub_t = clamp((event_phase_timer - 1.0) / 2.0, 0.0, 1.0)
+				# Включаем mouth-breathing и heartbeat, если еще не играют
+				if event_mouth_breath_player and not event_mouth_breath_player.is_playing():
+					event_mouth_breath_player.volume_db = -18.0
+					event_mouth_breath_player.play()
+				if event_heartbeat_player and not event_heartbeat_player.is_playing():
+					event_heartbeat_player.volume_db = -25.0
+					event_heartbeat_player.play()
+
+				if event_mouth_breath_player:
+					event_mouth_breath_player.volume_db = lerp(-18.0, 3.5, sub_t)
+				if event_heartbeat_player:
+					event_heartbeat_player.volume_db = lerp(-25.0, 5.0, sub_t)
+				# Шаги игрока затухают
+				_set_player_step_volume_attenuation(lerp(0.0, -45.0, sub_t))
+
+			# Общее время фазы 2: 1.0 сек задержки + 2.0 сек нарастания = 3.0 сек
+			if event_phase_timer >= 3.0:
 				event_phase = 3
 				event_phase_timer = 0.0
 
 		3:
-			# Фаза 3: 10 секунд длится сердцебиение и непрерывное дыхание ртом на постоянке
+			# Фаза 3: 10 секунд длится сердцебиение и непрерывное дыхание ртом на постоянке.
+			# За 2.5 секунды до конца фазы (до возвращения цветов и звуков) начинается звон в ушах / контузия!
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = 5.0
 			if event_mouth_breath_player:
@@ -772,18 +795,29 @@ func _process_breathing_event(delta: float):
 			red_relief_factor = 1.0
 			_apply_red_relief_effect(1.0)
 
+			# Звон в ушах начинается заранее (с 7.5 секунды фазы 3)
+			if event_phase_timer >= 7.5:
+				var t_tin = clamp((event_phase_timer - 7.5) / 2.5, 0.0, 1.0)
+				if event_tinnitus_player and not event_tinnitus_player.is_playing():
+					event_tinnitus_player.volume_db = -30.0
+					event_tinnitus_player.play()
+				if event_tinnitus_player:
+					event_tinnitus_player.volume_db = lerp(-30.0, 2.0, t_tin)
+
 			if event_phase_timer >= 10.0:
 				event_phase = 4
 				event_phase_timer = 0.0
 
 		4:
-			# Фаза 4: Сердцебиение затухает за 2 секунды, и снова становятся слышны шаги игрока
+			# Фаза 4: Сердцебиение затухает за 2 секунды, шаги игрока возвращаются.
+			# Звон в голове звучит громко перед началом возврата звуков и цветов.
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
 			if event_mouth_breath_player:
-				# Дыхание пока продолжает звучать на постоянке до полного возврата нормы в фазе 5
 				event_mouth_breath_player.volume_db = 3.5
+			if event_tinnitus_player:
+				event_tinnitus_player.volume_db = 2.0
 			_set_player_step_volume_attenuation(lerp(-45.0, 0.0, t))
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
@@ -796,23 +830,27 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 
 		5:
-			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму
-			# Дыхание ртом плавно затихает до выключения, нарастают звуки монстров, сирен, возвращается красный свет
+			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму.
+			# Звон в голове и дыхание ртом плавно затухают, пока звуки монстров, сирены и красный свет не вернутся полностью!
 			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
 			red_relief_factor = 1.0 - t
 			_apply_red_relief_effect(red_relief_factor)
 
 			if event_mouth_breath_player:
 				event_mouth_breath_player.volume_db = lerp(3.5, -60.0, t)
+			if event_tinnitus_player:
+				event_tinnitus_player.volume_db = lerp(2.0, -60.0, t)
 			if alarm1_player: alarm1_player.volume_db = lerp(-60.0, 2.0, t)
 			if alarm2_player: alarm2_player.volume_db = lerp(-60.0, -1.0, t)
 			_set_horde_volume_attenuation(lerp(-60.0, 0.0, t))
 			_set_player_step_volume_attenuation(0.0)
 
 			if event_phase_timer >= 5.0:
-				# Завершение ивента, сброс к норме
+				# Завершение ивента, звуки и цвета полностью вернулись
 				if event_mouth_breath_player:
 					event_mouth_breath_player.stop()
+				if event_tinnitus_player:
+					event_tinnitus_player.stop()
 				is_breathing_event_active = false
 				event_phase = 0
 				event_phase_timer = 0.0
@@ -827,6 +865,8 @@ func _start_breathing_event():
 	event_phase_timer = 0.0
 	red_relief_factor = 0.0
 
+	if event_tinnitus_player:
+		event_tinnitus_player.stop()
 	if event_mouth_breath_player:
 		event_mouth_breath_player.stop()
 	if event_breath_player:
