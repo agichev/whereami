@@ -30,19 +30,21 @@ var pack_smiler: CharacterBody3D = null
 var alarm1_player: AudioStreamPlayer = null
 var alarm2_player: AudioStreamPlayer = null
 
-# Дыхательный ивент паники
+# Дыхательный ивент передышки (вдох-выдох, успокоение, ослабление красного, сердцебиение)
 var event_breath_player: AudioStreamPlayer = null
 var event_heartbeat_player: AudioStreamPlayer = null
 var is_breathing_event_active: bool = false
-var event_cooldown_timer: float = 8.0 # Сейчас часто (через 8-15 сек после старта / предыдущего ивента)
+var event_cooldown_timer: float = 8.0 # Сейчас часто для теста (8-15 сек)
 var event_phase_timer: float = 0.0
 var event_phase: int = 0
+var red_relief_factor: float = 0.0 # 0.0 = полный красный кошмар, 1.0 = ослабленный спокойный свет
 # Фазы:
 # 0 = Idle / Ожидание
-# 1 = Заглушение окружения (1.5с) и старт мужского вдоха-выдоха
+# 1 = Заглушение окружения и монстров (1.5с), плавное ослабление красного, старт глубокого вдоха-выдоха
 # 2 = Появление сердцебиения (2с), шаги стихают
-# 3 = Сердцебиение стучит (10с)
+# 3 = Сердцебиение стучит (10с), звуки монстров и сирен ПОЛНОСТЬЮ заглушены, свет мягкий
 # 4 = Сердцебиение затухает, шаги возвращаются (2с)
+# 5 = Плавное возвращение тревоги, сирен, криков монстров и красного освещения в норму (5с)
 # 5 = Плавный возврат всех звуков в норму (5с)
 
 # Дверь выхода в конце коридора
@@ -700,38 +702,53 @@ func _process_breathing_event(delta: float):
 
 	match event_phase:
 		1:
-			# Фаза 1: Все звуки плавно заглушаются за 1.5 секунды, звучит глубокий мужской вдох-выдох
+			# Фаза 1: Все звуки сирен и монстров плавно заглушаются в тишину (-60 dB) за 1.5 секунды
+			# Звучит глубокий мужской вдох-выдох (моральная передышка)
+			# Красный свет плавно ослабляется и разбавляется мягким нейтральным светом
 			var t = clamp(event_phase_timer / 1.5, 0.0, 1.0)
-			# Приглушаем сирены на -24 dB
-			if alarm1_player: alarm1_player.volume_db = lerp(2.0, -24.0, t)
-			if alarm2_player: alarm2_player.volume_db = lerp(-1.0, -26.0, t)
-			# Приглушаем крики монстров
-			_set_horde_volume_attenuation(lerp(0.0, -22.0, t))
+			red_relief_factor = t
+
+			# Заглушаем сирены
+			if alarm1_player: alarm1_player.volume_db = lerp(2.0, -60.0, t)
+			if alarm2_player: alarm2_player.volume_db = lerp(-1.0, -60.0, t)
+			# Полностью глушим крики и звуки монстров
+			_set_horde_volume_attenuation(lerp(0.0, -60.0, t))
+			_apply_red_relief_effect(red_relief_factor)
 
 			if event_phase_timer >= 2.0:
 				event_phase = 2
 				event_phase_timer = 0.0
+				red_relief_factor = 1.0
+				_apply_red_relief_effect(1.0)
 				if event_heartbeat_player:
 					event_heartbeat_player.volume_db = -25.0
 					event_heartbeat_player.play()
 
 		2:
-			# Фаза 2: В течение пары секунд (2.0с) нарастает сердцебиение, а шаги игрока стихают
+			# Фаза 2: В течение 2 секунд нарастает сердцебиение, а шаги игрока стихают
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
-				event_heartbeat_player.volume_db = lerp(-25.0, 5.0, t) # Очень громкое сердцебиение (+5 dB)
+				event_heartbeat_player.volume_db = lerp(-25.0, 5.0, t)
 			# Шаги игрока затухают
-			_set_player_step_volume_attenuation(lerp(0.0, -40.0, t))
+			_set_player_step_volume_attenuation(lerp(0.0, -45.0, t))
+			_set_horde_volume_attenuation(-60.0)
+			if alarm1_player: alarm1_player.volume_db = -60.0
+			if alarm2_player: alarm2_player.volume_db = -60.0
 
 			if event_phase_timer >= 2.0:
 				event_phase = 3
 				event_phase_timer = 0.0
 
 		3:
-			# Фаза 3: 10 секунд длится оглушающее сердцебиение, шаги неслышны
+			# Фаза 3: 10 секунд длится сердцебиение, звуки монстров и сирен ПОЛНОСТЬЮ заглушены, шаги неслышны
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = 5.0
-			_set_player_step_volume_attenuation(-40.0)
+			_set_player_step_volume_attenuation(-45.0)
+			_set_horde_volume_attenuation(-60.0)
+			if alarm1_player: alarm1_player.volume_db = -60.0
+			if alarm2_player: alarm2_player.volume_db = -60.0
+			red_relief_factor = 1.0
+			_apply_red_relief_effect(1.0)
 
 			if event_phase_timer >= 10.0:
 				event_phase = 4
@@ -742,7 +759,10 @@ func _process_breathing_event(delta: float):
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
-			_set_player_step_volume_attenuation(lerp(-40.0, 0.0, t))
+			_set_player_step_volume_attenuation(lerp(-45.0, 0.0, t))
+			_set_horde_volume_attenuation(-60.0)
+			if alarm1_player: alarm1_player.volume_db = -60.0
+			if alarm2_player: alarm2_player.volume_db = -60.0
 
 			if event_phase_timer >= 2.0:
 				if event_heartbeat_player:
@@ -751,11 +771,14 @@ func _process_breathing_event(delta: float):
 				event_phase_timer = 0.0
 
 		5:
-			# Фаза 5: В течение 5 секунд всё плавно возвращается в полную норму
+			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму (нарастают звуки монстров, сирен, возвращается тревожный красный)
 			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
-			if alarm1_player: alarm1_player.volume_db = lerp(-24.0, 2.0, t)
-			if alarm2_player: alarm2_player.volume_db = lerp(-26.0, -1.0, t)
-			_set_horde_volume_attenuation(lerp(-22.0, 0.0, t))
+			red_relief_factor = 1.0 - t
+			_apply_red_relief_effect(red_relief_factor)
+
+			if alarm1_player: alarm1_player.volume_db = lerp(-60.0, 2.0, t)
+			if alarm2_player: alarm2_player.volume_db = lerp(-60.0, -1.0, t)
+			_set_horde_volume_attenuation(lerp(-60.0, 0.0, t))
 			_set_player_step_volume_attenuation(0.0)
 
 			if event_phase_timer >= 5.0:
@@ -763,13 +786,16 @@ func _process_breathing_event(delta: float):
 				is_breathing_event_active = false
 				event_phase = 0
 				event_phase_timer = 0.0
-				# Следующий запуск (пока часто: через 12-20 секунд)
+				red_relief_factor = 0.0
+				_apply_red_relief_effect(0.0)
+				# Следующий запуск передышки (пока для тестов: через 12-20 секунд)
 				event_cooldown_timer = randf_range(12.0, 20.0)
 
 func _start_breathing_event():
 	is_breathing_event_active = true
 	event_phase = 1
 	event_phase_timer = 0.0
+	red_relief_factor = 0.0
 
 	if event_breath_player:
 		event_breath_player.volume_db = 4.0
@@ -777,17 +803,42 @@ func _start_breathing_event():
 
 func _set_horde_volume_attenuation(offset_db: float):
 	if pack_bacteria and is_instance_valid(pack_bacteria):
-		var p = pack_bacteria.find_child("BacteriaScreamPlayer", true, false)
-		if p and p is AudioStreamPlayer3D:
-			p.volume_db = max(-60.0, 14.0 + offset_db)
+		for child in pack_bacteria.get_children():
+			if child is AudioStreamPlayer3D:
+				var base_v = 14.0 if child.name == "BacteriaScreamPlayer" else 3.0
+				child.volume_db = max(-80.0, base_v + offset_db)
 	if pack_hazmat and is_instance_valid(pack_hazmat):
-		var p2 = pack_hazmat.find_child("ChaseScreamAudio", true, false)
-		if p2 and p2 is AudioStreamPlayer3D:
-			p2.volume_db = max(-60.0, 14.0 + offset_db)
+		for child in pack_hazmat.get_children():
+			if child is AudioStreamPlayer3D:
+				var base_v = 14.0 if (child.name == "ChaseScreamPlayer" or child.name == "ChaseScreamAudio") else 3.0
+				child.volume_db = max(-80.0, base_v + offset_db)
 	if pack_smiler and is_instance_valid(pack_smiler):
-		var p3 = pack_smiler.find_child("SmilerStaticHum", true, false)
-		if p3 and p3 is AudioStreamPlayer3D:
-			p3.volume_db = max(-60.0, -4.0 + offset_db)
+		for child in pack_smiler.get_children():
+			if child is AudioStreamPlayer3D:
+				var base_v = -4.0 if child.name == "SmilerStaticHum" else -2.0
+				child.volume_db = max(-80.0, base_v + offset_db)
+
+func _apply_red_relief_effect(factor: float):
+	# factor: 0.0 (обычный алый кошмар Level !), 1.0 (максимальная моральная передышка, ослабленный свет)
+	var cl = clamp(factor, 0.0, 1.0)
+
+	# 1. Смягчение цвета ламп EXIT: от яростно-алого к мягкому теплому розово-белому с меньшей слепящей энергией
+	var light_col = lerp(Color(1.0, 0.05, 0.05), Color(0.95, 0.55, 0.5), cl)
+	var light_nrg = lerp(4.2, 1.8, cl)
+	for s_idx in active_exit_lights.keys():
+		for l in active_exit_lights[s_idx]:
+			if is_instance_valid(l) and l is OmniLight3D:
+				l.light_color = light_col
+				l.light_energy = light_nrg
+
+	# 2. Ослабление красного тумана и Bloom/Glow в WorldEnvironment
+	if run_world_env:
+		# Туман от ядовито-красного к мягкому нейтральному полумраку
+		run_world_env.fog_light_color = lerp(Color(0.45, 0.01, 0.01, 1.0), Color(0.12, 0.08, 0.08, 1.0), cl)
+		run_world_env.fog_density = lerp(0.018, 0.008, cl)
+		# Снижаем блум, чтобы убрать давящую красную пелену
+		run_world_env.glow_intensity = lerp(0.85, 0.35, cl)
+		run_world_env.glow_bloom = lerp(0.55, 0.15, cl)
 
 func _set_player_step_volume_attenuation(offset_db: float):
 	if player and is_instance_valid(player):
