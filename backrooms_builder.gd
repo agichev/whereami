@@ -659,12 +659,6 @@ func _process(delta):
 
 func _input(event: InputEvent):
 	if event is InputEventKey and event.pressed and not event.echo:
-		# Прямой хоткей F8 для спавна рисунка EXIT перед игроком
-		if event.keycode == KEY_F8 or event.physical_keycode == KEY_F8:
-			print("[CHEAT] Spawn EXIT drawing on Looked Wall (HotKey F8)")
-			_cheat_spawn_exit_drawing_on_wall()
-			return
-
 		# Считываем символ латинской раскладки как по unicode, так и по физическому коду клавиши
 		var char_typed = ""
 		var key_to_char = {
@@ -733,8 +727,8 @@ func _check_cheat_codes():
 		_cheat_spawn_door_on_wall()
 		return
 
-	# Читкод "exit" (или "ext") - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
-	if cheat_buffer.ends_with("exit") or cheat_buffer.ends_with("ext"):
+	# Читкод "exit" - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
+	if cheat_buffer.ends_with("exit"):
 		cheat_buffer = ""
 		print("[CHEAT] Spawn EXIT drawing on Looked Wall (exit)")
 		_cheat_spawn_exit_drawing_on_wall()
@@ -816,7 +810,7 @@ func _cheat_spawn_door_on_wall():
 	door_inst.rotation.y = atan2(hit_norm.x, hit_norm.z)
 	print("[CHEAT DOOR] Successfully spawned door at: ", hit_pos)
 
-# Читкод "exit" / "ext" или хоткей F8: спавнит рисунок EXIT (user_drawing_vert_5)
+# Читкод "exit": спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
 func _cheat_spawn_exit_drawing_on_wall():
 	if not player:
 		return
@@ -880,14 +874,6 @@ func _cheat_spawn_exit_drawing_on_wall():
 	add_child(quad)
 	# Добавляем интерактивную зону касания для перехода на Level !
 	_setup_exit_drawing_interaction(self, quad)
-
-	# Звуковая обратная связь при срабатывании читкода (клик зума / подтверждение)
-	var sfx = AudioStreamPlayer.new()
-	sfx.stream = load("res://audio/zoom_in.mp3") as AudioStream
-	sfx.volume_db = 2.0
-	add_child(sfx)
-	sfx.play()
-	sfx.finished.connect(sfx.queue_free)
 
 	print("[CHEAT EXIT] Successfully spawned EXIT drawing at: ", quad.global_position)
 
