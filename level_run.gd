@@ -33,6 +33,9 @@ var alarm2_player: AudioStreamPlayer = null
 # Дверь выхода в конце коридора
 var exit_door: InteractiveDoor = null
 var is_completed: bool = false
+var original_world_env: Environment = null
+var run_world_env: Environment = null
+var world_env_node: WorldEnvironment = null
 
 signal player_reached_exit
 
@@ -63,8 +66,9 @@ func _setup_materials():
 	exit_sign_mat = StandardMaterial3D.new()
 	exit_sign_mat.albedo_texture = load("res://level_run_assets/exit_sign.png")
 	exit_sign_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	exit_sign_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED # Яркий чистый неоновый знак, не заливаемый тьмой
+	exit_sign_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED # Яркий чистый неоновый знак
 	exit_sign_mat.emission_enabled = false
+	exit_sign_mat.cull_mode = BaseMaterial3D.CULL_DISABLED # Виден с любой стороны!
 
 	exit_box_mat = StandardMaterial3D.new()
 	exit_box_mat.albedo_color = Color(0.12, 0.02, 0.02)
@@ -96,6 +100,9 @@ func start_level(target_player: CharacterBody3D):
 	player = target_player
 	is_completed = false
 
+	# Настройка кинематографичного темного реалистичного окружения для Level !
+	_setup_level_run_environment()
+
 	# Запуск сирен
 	if alarm1_player:
 		alarm1_player.play()
@@ -111,11 +118,50 @@ func start_level(target_player: CharacterBody3D):
 	# Финишный тупик на отметке -5000м с открытой дверью выхода
 	_build_exit_barrier()
 
+func _setup_level_run_environment():
+	world_env_node = get_tree().root.find_child("WorldEnvironment", true, false)
+	if world_env_node and world_env_node.environment:
+		original_world_env = world_env_node.environment
+		run_world_env = original_world_env.duplicate()
+		
+		# Убираем желтый амбиент Уровня 0 — делаем почти черный глубокий космос
+		run_world_env.background_mode = Environment.BG_COLOR
+		run_world_env.background_color = Color(0.01, 0.002, 0.002, 1.0)
+		run_world_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		run_world_env.ambient_light_color = Color(0.02, 0.002, 0.002, 1.0) # Почти 0 амбиента! Только свет от табличек EXIT
+		run_world_env.ambient_light_energy = 0.15
+		
+		# Кинематографичный Blood Red Fog
+		run_world_env.fog_enabled = true
+		run_world_env.fog_light_color = Color(0.45, 0.01, 0.01, 1.0) # Глубокий бордово-красный туман вдали
+		run_world_env.fog_light_energy = 0.8
+		run_world_env.fog_density = 0.018 # Красивая дымка вдалеке коридора
+		
+		# Мощный реалистичный Bloom / Glow для знаков EXIT
+		run_world_env.glow_enabled = true
+		run_world_env.glow_intensity = 0.85
+		run_world_env.glow_bloom = 0.55
+		run_world_env.glow_hdr_threshold = 0.65
+		run_world_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+		
+		# Тональный маппинг ACES / Filmic для кинематографичного контраста
+		run_world_env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		run_world_env.tonemap_exposure = 1.0
+		
+		# Глубокие тени SSAO
+		run_world_env.ssao_enabled = true
+		run_world_env.ssao_radius = 1.8
+		run_world_env.ssao_intensity = 3.5
+		
+		world_env_node.environment = run_world_env
+
 func _exit_tree():
 	if alarm1_player:
 		alarm1_player.stop()
 	if alarm2_player:
 		alarm2_player.stop()
+	if world_env_node and original_world_env:
+		world_env_node.environment = original_world_env
 
 func _process(delta: float):
 	if not player or is_completed:
@@ -318,10 +364,10 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	fix_root.add_child(rod_l)
 	fix_root.add_child(rod_r)
 
-	# Корпус знака EXIT (подвесной)
+	# Корпус подвесного знака EXIT
 	var box_mesh = MeshInstance3D.new()
 	var b_box = BoxMesh.new()
-	b_box.size = Vector3(0.7, 0.35, 0.12)
+	b_box.size = Vector3(0.72, 0.36, 0.12)
 	box_mesh.mesh = b_box
 	box_mesh.material_override = exit_box_mat
 	box_mesh.position = Vector3(0.0, -0.32, 0.0)
@@ -330,10 +376,11 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	# Лицевая светящаяся табличка EXIT с надписью (лицом к бегущему игроку, смотрящему в -Z)
 	var sign_front = MeshInstance3D.new()
 	var sf_quad = QuadMesh.new()
-	sf_quad.size = Vector2(0.66, 0.33)
+	sf_quad.size = Vector2(0.68, 0.34)
 	sign_front.mesh = sf_quad
 	sign_front.material_override = exit_sign_mat
-	sign_front.position = Vector3(0.0, -0.32, 0.062)
+	# Смещаем чуть вперед от корпуса, без поворота (QuadMesh смотрит в +Z)
+	sign_front.position = Vector3(0.0, -0.32, 0.063)
 	sign_front.rotation_degrees = Vector3(0, 0, 0)
 	fix_root.add_child(sign_front)
 
@@ -341,22 +388,18 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	var sign_back = MeshInstance3D.new()
 	sign_back.mesh = sf_quad
 	sign_back.material_override = exit_sign_mat
-	sign_back.position = Vector3(0.0, -0.32, -0.062)
+	sign_back.position = Vector3(0.0, -0.32, -0.063)
 	sign_back.rotation_degrees = Vector3(0, 180, 0)
 	fix_root.add_child(sign_back)
 
-	# Потолочный длинный светильник (встроенный в потолок)
-	var ceiling_lamp_panel = _create_box_mesh(Vector3(1.2, 0.04, 0.4), Vector3(0.0, -0.02, 0.0), red_light_mat)
-	fix_root.add_child(ceiling_lamp_panel)
-
-	# Яркий красный свет тревоги
-	var red_light = OmniLight3D.new()
-	red_light.light_color = Color(1.0, 0.04, 0.04)
-	red_light.light_energy = 5.2
-	red_light.omni_range = 16.0
-	red_light.omni_attenuation = 1.6
-	red_light.position = Vector3(0.0, -0.45, 0.0)
-	fix_root.add_child(red_light)
+	# Источник света — САМ ЗНАК EXIT (расположен прямо внутри коробки знака, освещает коридор под собой и вокруг)
+	var exit_light = OmniLight3D.new()
+	exit_light.light_color = Color(1.0, 0.05, 0.05) # Чистый неоновый красный
+	exit_light.light_energy = 4.2
+	exit_light.omni_range = 14.0
+	exit_light.omni_attenuation = 1.35
+	exit_light.position = Vector3(0.0, -0.32, 0.0)
+	fix_root.add_child(exit_light)
 
 	parent.add_child(fix_root)
 
