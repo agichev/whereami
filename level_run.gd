@@ -809,24 +809,28 @@ func _process_breathing_event(delta: float):
 				event_phase = 5
 				event_phase_timer = 0.0
 				# РОV: прямо сейчас всё начинает краснеть и проявляются звуки!
-				# В этот самый момент стартует громкий звон в ушах!
+				# В этот момент плавно стартует звон в ушах с тишины (-40 dB)
 				if event_tinnitus_player:
-					event_tinnitus_player.volume_db = 4.0
+					event_tinnitus_player.volume_db = -40.0
 					event_tinnitus_player.play()
 
 		5:
 			# Фаза 5: В течение 5 секунд всё плавно возвращается:
 			# Красный цвет нарастает до максимума, сирены и крики монстров возвращаются на полную мощь.
-			# Звон в ушах звучит на протяжении всего этого времени!
+			# Звон в ушах плавно и мягко нарастает от тишины (-40 dB) до полной громкости (3.5 dB) за первые 1.8 секунды,
+			# а затем уверенно звенит до конца возвращения цветов и звуков!
 			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
 			red_relief_factor = 1.0 - t
 			_apply_red_relief_effect(red_relief_factor)
 
 			if event_mouth_breath_player:
 				event_mouth_breath_player.volume_db = lerp(-4.0, -60.0, t)
-			# Звон в ушах уверенно звучит всю фазу возврата
+
+			# Плавный fade-in звона за 1.8 секунды, затем удержание
 			if event_tinnitus_player:
-				event_tinnitus_player.volume_db = 4.0
+				var tin_fade_in = clamp(event_phase_timer / 1.8, 0.0, 1.0)
+				event_tinnitus_player.volume_db = lerp(-40.0, 3.5, tin_fade_in)
+
 			if alarm1_player: alarm1_player.volume_db = lerp(-60.0, 2.0, t)
 			if alarm2_player: alarm2_player.volume_db = lerp(-60.0, -1.0, t)
 			_set_horde_volume_attenuation(lerp(-60.0, 0.0, t))
