@@ -659,14 +659,20 @@ func _process(delta):
 
 func _input(event: InputEvent):
 	if event is InputEventKey and event.pressed and not event.echo:
+		# Прямой хоткей F8 для спавна рисунка EXIT перед игроком
+		if event.keycode == KEY_F8 or event.physical_keycode == KEY_F8:
+			print("[CHEAT] Spawn EXIT drawing on Looked Wall (HotKey F8)")
+			_cheat_spawn_exit_drawing_on_wall()
+			return
+
 		# Считываем символ латинской раскладки как по unicode, так и по физическому коду клавиши
 		var char_typed = ""
 		var key_to_char = {
-			KEY_J: "j", KEY_I: "i", KEY_L: "l", KEY_K: "k",
-			KEY_Y: "y", KEY_O: "o", KEY_U: "u", KEY_P: "p",
-			KEY_M: "m", KEY_S: "s", KEY_G: "g", KEY_H: "h",
-			KEY_E: "e", KEY_W: "w", KEY_F: "f", KEY_R: "r", KEY_N: "n",
-			KEY_X: "x", KEY_T: "t"
+			KEY_A: "a", KEY_B: "b", KEY_C: "c", KEY_D: "d", KEY_E: "e",
+			KEY_F: "f", KEY_G: "g", KEY_H: "h", KEY_I: "i", KEY_J: "j",
+			KEY_K: "k", KEY_L: "l", KEY_M: "m", KEY_N: "n", KEY_O: "o",
+			KEY_P: "p", KEY_Q: "q", KEY_R: "r", KEY_S: "s", KEY_T: "t",
+			KEY_U: "u", KEY_V: "v", KEY_W: "w", KEY_X: "x", KEY_Y: "y", KEY_Z: "z"
 		}
 
 		if key_to_char.has(event.keycode):
@@ -675,12 +681,11 @@ func _input(event: InputEvent):
 			char_typed = key_to_char[event.physical_keycode]
 		elif event.unicode > 0:
 			var c = char(event.unicode).to_lower()
-			# Поддержка русской раскладки на клавиатуре (ЙЦУКЕН)
+			# Полная поддержка русской раскладки клавиатуры (ЙЦУКЕН -> QWERTY)
 			var ru_to_en = {
-				"о": "j", "ш": "i", "д": "l", "л": "k",
-				"н": "y", "щ": "o", "г": "u", "з": "p",
-				"ь": "m", "ы": "s", "п": "g", "р": "h",
-				"у": "e", "ц": "w", "а": "f", "к": "r", "т": "n", "х": "x"
+				"й": "q", "ц": "w", "у": "e", "к": "r", "е": "t", "н": "y", "г": "u", "ш": "i", "щ": "o", "з": "p", "х": "[", "ъ": "]",
+				"ф": "a", "ы": "s", "в": "d", "а": "f", "п": "g", "р": "h", "о": "j", "л": "k", "д": "l", "ж": ";", "э": "'",
+				"я": "z", "ч": "x", "с": "c", "м": "v", "и": "b", "т": "n", "ь": "m", "б": ",", "ю": "."
 			}
 			if ru_to_en.has(c):
 				char_typed = ru_to_en[c]
@@ -691,7 +696,7 @@ func _input(event: InputEvent):
 			if cheat_buffer == "" and player and player.get("flashlight_light"):
 				flashlight_before_cheat = player.flashlight_light.visible
 			cheat_buffer += char_typed
-			cheat_clear_timer = 3.0 # Сброс буфера если не печатали 3 сек
+			cheat_clear_timer = 4.0 # Сброс буфера если не печатали 4 сек
 			_check_cheat_codes()
 
 func _check_cheat_codes():
@@ -728,8 +733,8 @@ func _check_cheat_codes():
 		_cheat_spawn_door_on_wall()
 		return
 
-	# Читкод "exit" - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
-	if cheat_buffer.ends_with("exit"):
+	# Читкод "exit" (или "ext") - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
+	if cheat_buffer.ends_with("exit") or cheat_buffer.ends_with("ext"):
 		cheat_buffer = ""
 		print("[CHEAT] Spawn EXIT drawing on Looked Wall (exit)")
 		_cheat_spawn_exit_drawing_on_wall()
@@ -811,31 +816,44 @@ func _cheat_spawn_door_on_wall():
 	door_inst.rotation.y = atan2(hit_norm.x, hit_norm.z)
 	print("[CHEAT DOOR] Successfully spawned door at: ", hit_pos)
 
-# Читкод "exit": спавнит рисунок EXIT (user_drawing_vert_5) прямо на стене перед взглядом игрока
+# Читкод "exit" / "ext" или хоткей F8: спавнит рисунок EXIT (user_drawing_vert_5)
 func _cheat_spawn_exit_drawing_on_wall():
 	if not player:
 		return
 	var cam = player.find_child("Camera3D", true, false)
 	if not cam:
-		return
+		cam = get_viewport().get_camera_3d()
+
+	var cam_pos = cam.global_position if cam else player.global_position + Vector3(0, 1.55, 0)
+	var cam_forward = -cam.global_transform.basis.z.normalized() if cam else -player.global_transform.basis.z.normalized()
+	# Игнорируем наклон вверх/вниз для позиции на полу
+	var flat_forward = Vector3(cam_forward.x, 0.0, cam_forward.z).normalized()
+	if flat_forward.length_squared() < 0.01:
+		flat_forward = Vector3.FORWARD
 
 	var space_state = get_world_3d().direct_space_state
-	var from = cam.global_position
-	var dir = -cam.global_transform.basis.z.normalized()
-	var to = from + dir * 18.0
+	var hit_pos = Vector3.ZERO
+	var hit_norm = Vector3.ZERO
+	var found_wall = false
 
-	var query = PhysicsRayQueryParameters3D.create(from, to)
-	query.exclude = [player]
-	var hit = space_state.intersect_ray(query)
-	if hit.is_empty():
-		print("[CHEAT EXIT] No wall found in line of sight")
-		return
+	if space_state:
+		var from = cam_pos
+		var to = from + cam_forward * 30.0
+		var query = PhysicsRayQueryParameters3D.create(from, to)
+		query.exclude = [player.get_rid() if player is CollisionObject3D else RID()]
+		var hit = space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var norm = hit.normal
+			if abs(norm.y) <= 0.7:
+				hit_pos = hit.position
+				hit_norm = norm
+				found_wall = true
 
-	var hit_pos = hit.position
-	var hit_norm = hit.normal
-	if abs(hit_norm.y) > 0.5:
-		print("[CHEAT EXIT] Hit floor or ceiling, skipping")
-		return
+	# Гарантированный fallback: если луч не встретил стену, ставим рисунок ровно в 2.4 метрах прямо перед игроком
+	if not found_wall:
+		hit_norm = -flat_forward
+		hit_pos = player.global_position + flat_forward * 2.4
+		print("[CHEAT EXIT] No wall hit in raycast, spawning floating billboard directly in front of player")
 
 	# Создаем QuadMesh с рисунком EXIT (vert_drawings[4])
 	var quad = MeshInstance3D.new()
@@ -851,17 +869,27 @@ func _cheat_spawn_exit_drawing_on_wall():
 	mat.roughness = 0.95
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED # Виден с обеих сторон
 	quad.material_override = mat
 
-	# Смещаем на 5 мм наружу от стены по нормали
-	quad.global_position = hit_pos + hit_norm * 0.008
-	quad.global_position.y = 1.56 # Центр по высоте
+	# Смещаем наружу по нормали
+	quad.global_position = hit_pos + hit_norm * 0.012
+	quad.global_position.y = 1.56 # Центр по высоте взгляда
 	quad.rotation.y = atan2(hit_norm.x, hit_norm.z)
 
 	add_child(quad)
 	# Добавляем интерактивную зону касания для перехода на Level !
 	_setup_exit_drawing_interaction(self, quad)
-	print("[CHEAT EXIT] Successfully spawned EXIT drawing at: ", hit_pos)
+
+	# Звуковая обратная связь при срабатывании читкода (клик зума / подтверждение)
+	var sfx = AudioStreamPlayer.new()
+	sfx.stream = load("res://audio/zoom_in.mp3") as AudioStream
+	sfx.volume_db = 2.0
+	add_child(sfx)
+	sfx.play()
+	sfx.finished.connect(sfx.queue_free)
+
+	print("[CHEAT EXIT] Successfully spawned EXIT drawing at: ", quad.global_position)
 
 func _on_door_void_entered(_door):
 	_transition_to_random_level()
