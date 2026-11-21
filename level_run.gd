@@ -123,10 +123,10 @@ func _setup_alarms():
 	event_breath_player.volume_db = 4.0
 	add_child(event_breath_player)
 
-	# Плеер постоянного дыхания ртом во время передышки (mouth-breathing)
+	# Плеер постоянного дыхания во время передышки (стандартное дыхание персонажа breath_slow.wav)
 	event_mouth_breath_player = AudioStreamPlayer.new()
 	event_mouth_breath_player.name = "EventMouthBreath"
-	event_mouth_breath_player.stream = load("res://audio/mouth_breathing.mp3")
+	event_mouth_breath_player.stream = load("res://audio/breath_slow.wav")
 	event_mouth_breath_player.volume_db = -80.0
 	event_mouth_breath_player.finished.connect(func():
 		if is_breathing_event_active and is_instance_valid(event_mouth_breath_player):
@@ -763,20 +763,20 @@ func _process_breathing_event(delta: float):
 				# Секунда тишины прошла — переходим к фазе 3
 				event_phase = 3
 				event_phase_timer = 0.0
-				# Включаем второй звук дыхания ртом (mouth-breathing) и сердцебиение
+				# Включаем стандартное дыхание (breath_slow.wav) и сердцебиение
 				if event_mouth_breath_player:
-					event_mouth_breath_player.volume_db = -10.0
+					event_mouth_breath_player.volume_db = -18.0
 					event_mouth_breath_player.play()
 				if event_heartbeat_player:
 					event_heartbeat_player.volume_db = -18.0
 					event_heartbeat_player.play()
 
 		3:
-			# Фаза 3: В течение первых 2.0 секунд нарастают дыхание ртом и сердцебиение, шаги затихают.
+			# Фаза 3: В течение первых 2.0 секунд нарастают дыхание и сердцебиение, шаги затихают.
 			# Затем 8 секунд непрерывного дыхания и сердцебиения (всего 10 секунд).
 			var t_ramp = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_mouth_breath_player:
-				event_mouth_breath_player.volume_db = lerp(-10.0, 3.5, t_ramp)
+				event_mouth_breath_player.volume_db = lerp(-18.0, -4.0, t_ramp)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(-18.0, 5.0, t_ramp)
 			_set_player_step_volume_attenuation(lerp(0.0, -45.0, t_ramp))
@@ -792,12 +792,12 @@ func _process_breathing_event(delta: float):
 
 		4:
 			# Фаза 4: Сердцебиение затухает за 2 секунды, шаги игрока возвращаются.
-			# Дыхание ртом продолжает звучать. Окружение всё ещё заглушено и свет мягкий.
+			# Дыхание продолжает звучать. Окружение всё ещё заглушено и свет мягкий.
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
 			if event_mouth_breath_player:
-				event_mouth_breath_player.volume_db = 3.5
+				event_mouth_breath_player.volume_db = -4.0
 			_set_player_step_volume_attenuation(lerp(-45.0, 0.0, t))
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
@@ -823,7 +823,7 @@ func _process_breathing_event(delta: float):
 			_apply_red_relief_effect(red_relief_factor)
 
 			if event_mouth_breath_player:
-				event_mouth_breath_player.volume_db = lerp(3.5, -60.0, t)
+				event_mouth_breath_player.volume_db = lerp(-4.0, -60.0, t)
 			# Звон в ушах уверенно звучит всю фазу возврата
 			if event_tinnitus_player:
 				event_tinnitus_player.volume_db = 4.0
