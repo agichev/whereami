@@ -174,6 +174,14 @@ const CHECK_INTERVAL: float = 60.0 # 1 минута
 var bacteria_peeker_timer: float = 0.0
 const BACTERIA_PEEKER_INTERVAL: float = 80.0
 
+# Динамический шанс агра Бактерии на Уровне 0:
+# Каждые 5 минут игры на Уровне 0 базовый шанс агра (18%) увеличивается (например, +15% за каждые 5 мин)
+# При нападении (переходе в погоню) таймер и шанс сбрасываются обратно к базовому значению.
+var level0_bacteria_time: float = 0.0
+const BACTERIA_BASE_AGGRO_CHANCE: float = 0.18
+const BACTERIA_AGGRO_STEP_INTERVAL: float = 300.0 # 5 минут (300 сек)
+const BACTERIA_AGGRO_BONUS_PER_STEP: float = 0.15 # +15% каждые 5 минут
+
 # Механика случайных пугающих звуков Backrooms (вдали, за стеной, в вентиляции)
 # Примечание: исключены любые голоса NPC/Бактерии, чтобы они звучали ТОЛЬКО при реальном появлении сущности!
 var ambient_spooky_sounds: Array = [
@@ -622,6 +630,10 @@ func _process(delta):
 			update_chunks_around_player()
 
 		if current_level == 0:
+			# Накопление времени нахождения на Уровне 0 (увеличивает шанс агра Бактерии каждые 5 минут)
+			if player and player.is_active and not is_blackout:
+				level0_bacteria_time += delta
+
 			# Проверка случайного спавна Hazmat NPC раз в минуту
 			_process_npc_random_spawner(delta)
 
@@ -914,6 +926,15 @@ func _process_npc_random_spawner(delta: float):
 		else:
 			npc_failed_spawn_checks += 1
 
+func get_current_bacteria_aggro_chance() -> float:
+	var steps = int(level0_bacteria_time / BACTERIA_AGGRO_STEP_INTERVAL)
+	var chance = BACTERIA_BASE_AGGRO_CHANCE + float(steps) * BACTERIA_AGGRO_BONUS_PER_STEP
+	return clamp(chance, 0.0, 1.0)
+
+func reset_bacteria_aggro_timer():
+	level0_bacteria_time = 0.0
+	print("[BACTERIA] Aggro triggered! Level 0 aggro timer reset to base.")
+
 func spawn_bacteria_peeker(force_aggro: bool = false):
 	if not player:
 		return
@@ -1047,6 +1068,7 @@ func spawn_bacteria_peeker(force_aggro: bool = false):
 	spawned_bacteria = b
 	b.global_position = found_pos
 	b.target_player = player
+	b.aggro_chance = get_current_bacteria_aggro_chance()
 	b.start_peeker_sequence(hide_dir)
 	if force_aggro:
 		b.trigger_aggro_chase()

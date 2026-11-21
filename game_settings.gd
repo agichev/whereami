@@ -18,9 +18,48 @@ var chunk_render_distance: int = 5 # Радиус чанков (от 2 до 8, �
 var graphics_backend: String = "Vulkan" # "Vulkan" или "OpenGL"
 var graphics_backend_changed: bool = false # Смена бэкенда требует перезапуска приложения
 
-# Музыка меню "Warm Nights" (сохраняет позицию воспроизведения между главным меню и меню паузы Esc)
+# Настраиваемые действия управления (клавиши)
+const REBINDABLE_ACTIONS: Array[String] = [
+	"move_forward",
+	"move_backward",
+	"move_left",
+	"move_right",
+	"sprint",
+	"interact",
+	"flashlight",
+	"pause"
+]
+
+const ACTION_DISPLAY_NAMES = {
+	"move_forward": "Move Forward",
+	"move_backward": "Move Backward",
+	"move_left": "Move Left",
+	"move_right": "Move Right",
+	"sprint": "Sprint",
+	"interact": "Interact / Open Door",
+	"flashlight": "Flashlight",
+	"pause": "Pause / Menu"
+}
+
+# Дефолтные клавиши (physical_keycode или keycode)
+const DEFAULT_KEYBINDS = {
+	"move_forward": KEY_W,
+	"move_backward": KEY_S,
+	"move_left": KEY_A,
+	"move_right": KEY_D,
+	"sprint": KEY_SHIFT,
+	"interact": KEY_E,
+	"flashlight": KEY_F,
+	"pause": KEY_ESCAPE
+}
+
+var keybinds: Dictionary = {}
+
+# Музыка меню (выбирается случайно между Warm Nights и Hey Kids при запуске, сохраняет позицию)
 var menu_music_player: AudioStreamPlayer = null
 var warm_nights_stream = preload("res://audio/Warm_Nights.mp3")
+var hey_kids_stream = preload("res://audio/hey_kids.mp3")
+var active_menu_stream: AudioStream = null
 var menu_music_playback_pos: float = 0.0
 
 signal settings_changed
@@ -40,9 +79,16 @@ func _ready():
 func setup_menu_music_player():
 	if menu_music_player:
 		return
+
+	# Случайный выбор одного из двух треков меню
+	if randf() < 0.5:
+		active_menu_stream = warm_nights_stream
+	else:
+		active_menu_stream = hey_kids_stream
+
 	menu_music_player = AudioStreamPlayer.new()
 	menu_music_player.name = "MenuMusicPlayer"
-	menu_music_player.stream = warm_nights_stream
+	menu_music_player.stream = active_menu_stream
 	menu_music_player.process_mode = Node.PROCESS_MODE_ALWAYS # Играет даже когда дерево на паузе!
 	add_child(menu_music_player)
 
@@ -56,7 +102,7 @@ func play_menu_music(vol_linear: float = 1.0):
 	menu_music_player.volume_db = target_db
 
 	if not menu_music_player.is_playing():
-		var stream_len = warm_nights_stream.get_length() if warm_nights_stream else 0.0
+		var stream_len = active_menu_stream.get_length() if active_menu_stream else 0.0
 		var seek_pos = fmod(menu_music_playback_pos, stream_len) if stream_len > 0.0 else 0.0
 		menu_music_player.play(seek_pos)
 
@@ -119,9 +165,17 @@ func save_settings():
 	cfg.set_value("settings", "max_fps", max_fps)
 	cfg.set_value("settings", "chunk_render_distance", chunk_render_distance)
 	cfg.set_value("settings", "graphics_backend", graphics_backend)
+	
+	for action in REBINDABLE_ACTIONS:
+		if keybinds.has(action):
+			cfg.set_value("keybinds", action, keybinds[action])
+
 	cfg.save("user://settings.cfg")
 
 func load_settings():
+	# Инициализация дефолтных биндов
+	keybinds = DEFAULT_KEYBINDS.duplicate()
+
 	var cfg = ConfigFile.new()
 	var err = cfg.load("user://settings.cfg")
 	if err == OK:
@@ -138,7 +192,48 @@ func load_settings():
 		max_fps = cfg.get_value("settings", "max_fps", 60)
 		chunk_render_distance = cfg.get_value("settings", "chunk_render_distance", 5)
 		graphics_backend = cfg.get_value("settings", "graphics_backend", "Vulkan")
+		
+		for action in REBINDABLE_ACTIONS:
+			if cfg.has_section_key("keybinds", action):
+				keybinds[action] = cfg.get_value("keybinds", action)
+
+	apply_keybinds_to_input_map()
 	apply_settings()
+
+func apply_keybinds_to_input_map():
+	for action in REBINDABLE_ACTIONS:
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		
+		# Очищаем только старые InputEventKey для этого действия, оставляя другие (если есть)
+		var old_events = InputMap.action_get_events(action)
+		for ev in old_events:
+			if ev is InputEventKey:
+				InputMap.action_erase_event(action, ev)
+
+		var keycode: int = keybinds.get(action, DEFAULT_KEYBINDS.get(action, KEY_NONE))
+		if keycode != KEY_NONE:
+			var new_key = InputEventKey.new()
+			new_key.physical_keycode = keycode as Key
+			InputMap.action_add_event(action, new_key)
+
+func set_keybind(action: String, keycode: int):
+	keybinds[action] = keycode
+	apply_keybinds_to_input_map()
+	save_settings()
+	settings_changed.emit()
+
+func reset_keybinds_to_defaults():
+	keybinds = DEFAULT_KEYBINDS.duplicate()
+	apply_keybinds_to_input_map()
+	save_settings()
+	settings_changed.emit()
+
+func get_action_key_name(action: String) -> String:
+	var code: int = keybinds.get(action, DEFAULT_KEYBINDS.get(action, KEY_NONE))
+	if code == KEY_NONE:
+		return "None"
+	return OS.get_keycode_string(code as Key)
 
 # Перезапуск приложения с выбранным рендером (Forward+/Vulkan или Compatibility/OpenGL).
 # Смена бэкенда невозможна на живом рендере, поэтому нужен новый процесс.

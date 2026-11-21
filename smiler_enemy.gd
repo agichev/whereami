@@ -206,7 +206,14 @@ func _trigger_kill_player():
 	target_player.is_active = false
 	target_player.velocity = Vector3.ZERO
 
-	# Проигрываем jumpscare видео и возвращаем в Главное Меню
+	# Ищем контроллер генератора Backrooms (Main)
+	var main_builder = get_tree().root.find_child("Main", true, false)
+	if main_builder and main_builder.has_method("_transition_to_level_minus44"):
+		# Запускаем переход на Level -44
+		main_builder._transition_to_level_minus44()
+		return
+
+	# Резервный вариант, если Main не найден в дереве сцены
 	var ui = get_tree().root.find_child("UI", true, false)
 	if not ui:
 		get_tree().reload_current_scene()

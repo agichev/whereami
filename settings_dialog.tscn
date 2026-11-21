@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://settingsdialog9871"]
+[gd_scene load_steps=9 format=3 uid="uid://settingsdialog9871"]
 
 [ext_resource type="Script" path="res://settings_dialog.gd" id="1_script"]
 
@@ -27,10 +27,6 @@ corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
-expand_margin_left = 8.0
-expand_margin_top = 4.0
-expand_margin_right = 8.0
-expand_margin_bottom = 4.0
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_hover"]
 bg_color = Color(0.22, 0.20, 0.08, 0.95)
@@ -43,10 +39,54 @@ corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
-expand_margin_left = 8.0
-expand_margin_top = 4.0
-expand_margin_right = 8.0
-expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_active"]
+bg_color = Color(0.22, 0.20, 0.08, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.95, 0.88, 0.45, 0.9)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_inactive"]
+bg_color = Color(0.10, 0.09, 0.04, 0.7)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.45, 0.2, 0.4)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_key_btn"]
+bg_color = Color(0.12, 0.11, 0.05, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.65, 0.60, 0.25, 0.6)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_key_hover"]
+bg_color = Color(0.25, 0.22, 0.08, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1.0, 0.92, 0.45, 0.9)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [node name="SettingsDialog" type="Control"]
 process_mode = 3
@@ -76,28 +116,24 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Panel" type="PanelContainer" parent="CenterContainer"]
-custom_minimum_size = Vector2(470, 480)
+custom_minimum_size = Vector2(580, 560)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="MarginContainer" type="MarginContainer" parent="CenterContainer/Panel"]
 layout_mode = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
 
-[node name="ScrollContainer" type="ScrollContainer" parent="CenterContainer/Panel/MarginContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer"]
+[node name="MainVBox" type="VBoxContainer" parent="CenterContainer/Panel/MarginContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 6
+size_flags_vertical = 3
+theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="Title" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92, 0.86, 0.45, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
@@ -105,36 +141,74 @@ theme_override_font_sizes/font_size = 18
 text = "SETTINGS"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="TabsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 16
+
+[node name="TabGeneralBtn" type="Button" parent="CenterContainer/Panel/MarginContainer/MainVBox/TabsRow"]
+custom_minimum_size = Vector2(170, 34)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(0.95, 0.9, 0.6, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_tab_active")
+theme_override_styles/hover = SubResource("StyleBoxFlat_tab_active")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_tab_active")
+text = "GENERAL & VIDEO"
+
+[node name="TabKeybindsBtn" type="Button" parent="CenterContainer/Panel/MarginContainer/MainVBox/TabsRow"]
+custom_minimum_size = Vector2(170, 34)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(0.65, 0.62, 0.5, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_tab_inactive")
+theme_override_styles/hover = SubResource("StyleBoxFlat_tab_active")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_tab_active")
+text = "CONTROLS (BINDS)"
+
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
 layout_mode = 2
 
-[node name="VolRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="GeneralTab" type="ScrollContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="VolRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VolRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VolRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Master Volume"
 
-[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VolRow"]
+[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VolRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 value = 100.0
 
-[node name="SensRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="SensRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/SensRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/SensRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Mouse Sensitivity"
 
-[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/SensRow"]
+[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/SensRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
@@ -143,17 +217,17 @@ max_value = 8.0
 step = 0.1
 value = 2.5
 
-[node name="FovRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="FovRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FovRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FovRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Field of View (FOV)"
 
-[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FovRow"]
+[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FovRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
@@ -162,7 +236,7 @@ max_value = 100.0
 step = 1.0
 value = 70.0
 
-[node name="ValueLabel" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FovRow"]
+[node name="ValueLabel" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FovRow"]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.95, 0.9, 0.7, 1)
@@ -170,100 +244,100 @@ theme_override_font_sizes/font_size = 13
 text = "70°"
 horizontal_alignment = 2
 
-[node name="VhsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="VhsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VhsRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VhsRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
-text = "VHS Effect / Noise"
+text = "VHS Effect (Camera Filter)"
 
-[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VhsRow"]
+[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VhsRow"]
 layout_mode = 2
 button_pressed = true
 
-[node name="FsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="FsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FsRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FsRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Fullscreen Mode"
 
-[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FsRow"]
+[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FsRow"]
 layout_mode = 2
 
-[node name="ResRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="ResRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ResRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/ResRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Resolution"
 
-[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ResRow"]
+[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/ResRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="VsyncRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="VsyncRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VsyncRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VsyncRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "V-Sync (Vertical Sync)"
 
-[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/VsyncRow"]
+[node name="CheckBox" type="CheckBox" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/VsyncRow"]
 layout_mode = 2
 button_pressed = true
 
-[node name="FpsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="FpsRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FpsRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FpsRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Framerate Limit (FPS)"
 
-[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/FpsRow"]
+[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/FpsRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="RenderRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="RenderRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/RenderRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/RenderRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Rendering Backend"
 
-[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/RenderRow"]
+[node name="OptionButton" type="OptionButton" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/RenderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ChunkRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="ChunkRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ChunkRow"]
-custom_minimum_size = Vector2(160, 0)
+[node name="Label" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/ChunkRow"]
+custom_minimum_size = Vector2(180, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.82, 0.7, 1)
 theme_override_font_sizes/font_size = 14
 text = "Render Distance"
 
-[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ChunkRow"]
+[node name="HSlider" type="HSlider" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/ChunkRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
@@ -272,7 +346,7 @@ max_value = 8.0
 step = 1.0
 value = 5.0
 
-[node name="ValueLabel" type="Label" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer/ChunkRow"]
+[node name="ValueLabel" type="Label" parent="CenterContainer/Panel/MarginContainer/MainVBox/GeneralTab/VBoxContainer/ChunkRow"]
 custom_minimum_size = Vector2(70, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.95, 0.9, 0.7, 1)
@@ -280,18 +354,97 @@ theme_override_font_sizes/font_size = 13
 text = "5 Chunks"
 horizontal_alignment = 2
 
-[node name="Spacer" type="Control" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
-custom_minimum_size = Vector2(0, 6)
+[node name="KeybindsTab" type="ScrollContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
+visible = false
 layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 3
 
-[node name="BackButton" type="Button" parent="CenterContainer/Panel/MarginContainer/ScrollContainer/VBoxContainer"]
-custom_minimum_size = Vector2(120, 36)
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/KeybindsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="KeybindsList" type="VBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox/KeybindsTab/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ResetKeybindsBtn" type="Button" parent="CenterContainer/Panel/MarginContainer/MainVBox/KeybindsTab/VBoxContainer"]
+custom_minimum_size = Vector2(210, 32)
 layout_mode = 2
 size_flags_horizontal = 4
+focus_mode = 0
+theme_override_colors/font_color = Color(0.85, 0.75, 0.5, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
+theme_override_styles/hover = SubResource("StyleBoxFlat_btn_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_btn_hover")
+text = "Reset Controls to Default"
+
+[node name="BottomRow" type="HBoxContainer" parent="CenterContainer/Panel/MarginContainer/MainVBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="BackButton" type="Button" parent="CenterContainer/Panel/MarginContainer/MainVBox/BottomRow"]
+custom_minimum_size = Vector2(130, 34)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
 theme_override_colors/font_color = Color(0.9, 0.85, 0.55, 1)
 theme_override_colors/font_hover_color = Color(1, 0.98, 0.8, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 15
 theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
 theme_override_styles/hover = SubResource("StyleBoxFlat_btn_hover")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_btn_hover")
 text = "BACK"
+
+[node name="KeyListenOverlay" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.75)
+
+[node name="Center" type="CenterContainer" parent="KeyListenOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="KeyListenOverlay/Center"]
+custom_minimum_size = Vector2(340, 140)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Margin" type="MarginContainer" parent="KeyListenOverlay/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="KeyListenOverlay/Center/Panel/Margin"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="ActionPromptLabel" type="Label" parent="KeyListenOverlay/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.9, 0.6, 1)
+theme_override_font_sizes/font_size = 15
+text = "Press any key for action..."
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="KeyListenOverlay/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 12
+text = "Press ESC to cancel"
+horizontal_alignment = 1

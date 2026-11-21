@@ -303,16 +303,15 @@ func _input(event: InputEvent):
 	if event.is_action_pressed("pause"):
 		open_pause_menu()
 
-	# Свободное переключение фонарика по клавише F (латинская F / русская А)
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_F or event.physical_keycode == KEY_F or (event.unicode > 0 and (char(event.unicode).to_lower() == "f" or char(event.unicode).to_lower() == "а")):
-			if not is_in_cutscene:
-				toggle_flashlight()
+	# Переключение фонарика
+	if event.is_action_pressed("flashlight"):
+		if not is_in_cutscene:
+			toggle_flashlight()
 
-		# Взаимодействие с дверью по клавише E (латинская E / русская У)
-		if event.keycode == KEY_E or event.physical_keycode == KEY_E or (event.unicode > 0 and (char(event.unicode).to_lower() == "e" or char(event.unicode).to_lower() == "у")):
-			if not is_in_cutscene:
-				interact_with_door()
+	# Взаимодействие с дверью
+	if event.is_action_pressed("interact"):
+		if not is_in_cutscene:
+			interact_with_door()
 
 func zoom_step(zoom_in: bool):
 	if zoom_in:

@@ -18,6 +18,7 @@ var state_timer: float = 0.0
 var watch_duration: float = 1.0
 var retreat_direction: Vector3 = Vector3.ZERO
 var retreat_speed: float = 3.8
+var aggro_chance: float = 0.18 # Шанс агра (передается из билдера с учетом времени на уровне 0)
 
 # Звуки
 var voice_player: AudioStreamPlayer3D = null
@@ -148,11 +149,11 @@ func _physics_process(delta: float):
 			if target_player:
 				dist = global_position.distance_to(target_player.global_position)
 
-			# По окончании времени наблюдения: с шансом 18% агрится на игрока, иначе спокойно уходит
+			# По окончании времени наблюдения: с динамическим шансом агрится на игрока, иначе спокойно уходит
 			if state_timer >= watch_duration or dist < 7.0:
 				state_timer = 0.0
-				# Маленький шанс (18%) триггера погони
-				if randf() < 0.18:
+				# Проверка шанса триггера погони
+				if randf() < aggro_chance:
 					trigger_aggro_chase()
 				else:
 					state = PeekerState.RETREATING
@@ -214,6 +215,11 @@ func trigger_aggro_chase():
 	chase_duration = 0.0
 	lost_player_timer = 0.0
 	has_caught_player = false
+
+	# Сбрасываем таймер шанса агра в билдере к норме
+	var builder = get_tree().root.find_child("Main", true, false)
+	if builder and builder.has_method("reset_bacteria_aggro_timer"):
+		builder.reset_bacteria_aggro_timer()
 
 	# Останавливаем шепот
 	if voice_player and voice_player.is_playing():
