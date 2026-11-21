@@ -665,7 +665,8 @@ func _input(event: InputEvent):
 			KEY_J: "j", KEY_I: "i", KEY_L: "l", KEY_K: "k",
 			KEY_Y: "y", KEY_O: "o", KEY_U: "u", KEY_P: "p",
 			KEY_M: "m", KEY_S: "s", KEY_G: "g", KEY_H: "h",
-			KEY_E: "e", KEY_W: "w", KEY_F: "f", KEY_R: "r", KEY_N: "n"
+			KEY_E: "e", KEY_W: "w", KEY_F: "f", KEY_R: "r", KEY_N: "n",
+			KEY_X: "x", KEY_T: "t"
 		}
 
 		if key_to_char.has(event.keycode):
@@ -679,7 +680,7 @@ func _input(event: InputEvent):
 				"о": "j", "ш": "i", "д": "l", "л": "k",
 				"н": "y", "щ": "o", "г": "u", "з": "p",
 				"ь": "m", "ы": "s", "п": "g", "р": "h",
-				"у": "e", "ц": "w", "а": "f"
+				"у": "e", "ц": "w", "а": "f", "к": "r", "т": "n", "х": "x"
 			}
 			if ru_to_en.has(c):
 				char_typed = ru_to_en[c]
@@ -725,6 +726,13 @@ func _check_cheat_codes():
 		cheat_buffer = ""
 		print("[CHEAT] Spawn Door on Looked Wall (klm)")
 		_cheat_spawn_door_on_wall()
+		return
+
+	# Читкод "exit" - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
+	if cheat_buffer.ends_with("exit"):
+		cheat_buffer = ""
+		print("[CHEAT] Spawn EXIT drawing on Looked Wall (exit)")
+		_cheat_spawn_exit_drawing_on_wall()
 		return
 
 	# Читкод "ghi" (или "sml") - вызывает отключение света (на Уровне 1 запускает блэкаут со Смайлерами, на Уровне 0 — блэкаут комнат, на Уровне -44 — блэкаут с оповещением)
@@ -802,6 +810,58 @@ func _cheat_spawn_door_on_wall():
 	# Поворачиваем дверь лицом наружу от стены
 	door_inst.rotation.y = atan2(hit_norm.x, hit_norm.z)
 	print("[CHEAT DOOR] Successfully spawned door at: ", hit_pos)
+
+# Читкод "exit": спавнит рисунок EXIT (user_drawing_vert_5) прямо на стене перед взглядом игрока
+func _cheat_spawn_exit_drawing_on_wall():
+	if not player:
+		return
+	var cam = player.find_child("Camera3D", true, false)
+	if not cam:
+		return
+
+	var space_state = get_world_3d().direct_space_state
+	var from = cam.global_position
+	var dir = -cam.global_transform.basis.z.normalized()
+	var to = from + dir * 18.0
+
+	var query = PhysicsRayQueryParameters3D.create(from, to)
+	query.exclude = [player]
+	var hit = space_state.intersect_ray(query)
+	if hit.is_empty():
+		print("[CHEAT EXIT] No wall found in line of sight")
+		return
+
+	var hit_pos = hit.position
+	var hit_norm = hit.normal
+	if abs(hit_norm.y) > 0.5:
+		print("[CHEAT EXIT] Hit floor or ceiling, skipping")
+		return
+
+	# Создаем QuadMesh с рисунком EXIT (vert_drawings[4])
+	var quad = MeshInstance3D.new()
+	quad.name = "CheatExitDrawing"
+	var p_mesh = QuadMesh.new()
+	p_mesh.size = Vector2(1.62, 2.88)
+	quad.mesh = p_mesh
+
+	var mat = StandardMaterial3D.new()
+	mat.albedo_texture = vert_drawings[4]
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	mat.roughness = 0.95
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+	quad.material_override = mat
+
+	# Смещаем на 5 мм наружу от стены по нормали
+	quad.global_position = hit_pos + hit_norm * 0.008
+	quad.global_position.y = 1.56 # Центр по высоте
+	quad.rotation.y = atan2(hit_norm.x, hit_norm.z)
+
+	add_child(quad)
+	# Добавляем интерактивную зону касания для перехода на Level !
+	_setup_exit_drawing_interaction(self, quad)
+	print("[CHEAT EXIT] Successfully spawned EXIT drawing at: ", hit_pos)
 
 func _on_door_void_entered(_door):
 	_transition_to_random_level()
