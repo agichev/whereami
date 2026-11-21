@@ -36,7 +36,7 @@ var event_mouth_breath_player: AudioStreamPlayer = null
 var event_heartbeat_player: AudioStreamPlayer = null
 var event_tinnitus_player: AudioStreamPlayer = null
 var is_breathing_event_active: bool = false
-var event_cooldown_timer: float = 8.0 # Сейчас часто для теста (8-15 сек)
+var event_cooldown_timer: float = 300.0 # Первый эвент через ~5-10 минут (300-600 сек)
 var event_phase_timer: float = 0.0
 var event_phase: int = 0
 var red_relief_factor: float = 0.0 # 0.0 = полный красный кошмар, 1.0 = ослабленный спокойный свет
@@ -865,8 +865,8 @@ func _process_breathing_event(delta: float):
 				is_breathing_event_active = false
 				event_phase = 0
 				event_phase_timer = 0.0
-				# Следующий запуск передышки (пока для тестов: через 12-20 секунд)
-				event_cooldown_timer = randf_range(12.0, 20.0)
+				# Следующий запуск передышки: раз в 5-10 минут (300.0 - 600.0 сек)
+				event_cooldown_timer = randf_range(300.0, 600.0)
 
 func _start_breathing_event():
 	is_breathing_event_active = true
