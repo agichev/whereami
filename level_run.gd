@@ -145,34 +145,37 @@ func _setup_level_run_environment():
 		original_world_env = world_env_node.environment
 		run_world_env = original_world_env.duplicate()
 		
-		# Убираем желтый амбиент Уровня 0 — делаем почти черный глубокий космос
+		# Черный глубокий фон без сторонней подсветки
 		run_world_env.background_mode = Environment.BG_COLOR
-		run_world_env.background_color = Color(0.01, 0.002, 0.002, 1.0)
+		run_world_env.background_color = Color(0.005, 0.001, 0.001, 1.0)
 		run_world_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		run_world_env.ambient_light_color = Color(0.02, 0.002, 0.002, 1.0) # Почти 0 амбиента! Только свет от табличек EXIT
-		run_world_env.ambient_light_energy = 0.15
+		run_world_env.ambient_light_color = Color(0.005, 0.001, 0.001, 1.0)
+		run_world_env.ambient_light_energy = 0.05
 		
-		# Кинематографичный Blood Red Fog (густой алый туман вдалеке впереди)
+		# Красный туман ТОЛЬКО вдали (начинается с 35-40 метров, вблизи тумана НЕТ)
 		run_world_env.fog_enabled = true
-		run_world_env.fog_light_color = Color(0.85, 0.02, 0.02, 1.0) # Насыщенный ярко-кровавый свет впереди
-		run_world_env.fog_light_energy = 1.35
-		run_world_env.fog_density = 0.028 # При вглядывании вдаль коридор уходит в густую кровавую красноту
+		run_world_env.fog_mode = Environment.FOG_MODE_DEPTH
+		run_world_env.fog_light_color = Color(0.9, 0.02, 0.02, 1.0) # Ярко-кровавый цвет горизонта вдали
+		run_world_env.fog_light_energy = 1.0
+		run_world_env.fog_depth_begin = 35.0  # Ближе 35 метров воздух абсолютно чистый!
+		run_world_env.fog_depth_end = 120.0   # На 120м коридор полностью уходит в раскаленную красноту
+		run_world_env.fog_density = 0.001     # Отключаем экспоненциальный туман вблизи
 		
-		# Мощный реалистичный Bloom / Glow для знаков EXIT
+		# Мягкий аккуратный Bloom для надписей EXIT
 		run_world_env.glow_enabled = true
-		run_world_env.glow_intensity = 1.1
-		run_world_env.glow_bloom = 0.65
-		run_world_env.glow_hdr_threshold = 0.60
-		run_world_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+		run_world_env.glow_intensity = 0.4
+		run_world_env.glow_bloom = 0.2
+		run_world_env.glow_hdr_threshold = 0.85
+		run_world_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 		
-		# Тональный маппинг ACES / Filmic для кинематографичного контраста
+		# Тональный маппинг Filmic
 		run_world_env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 		run_world_env.tonemap_exposure = 1.0
 		
-		# Глубокие тени SSAO
+		# Глубокие тени SSAO в углах
 		run_world_env.ssao_enabled = true
-		run_world_env.ssao_radius = 1.8
-		run_world_env.ssao_intensity = 3.5
+		run_world_env.ssao_radius = 1.5
+		run_world_env.ssao_intensity = 2.5
 		
 		world_env_node.environment = run_world_env
 
@@ -415,10 +418,10 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 
 	# Источник света — САМ ЗНАК EXIT (расположен прямо внутри коробки знака, освещает коридор под собой и вокруг)
 	var exit_light = OmniLight3D.new()
-	exit_light.light_color = Color(1.0, 0.05, 0.05) # Чистый неоновый красный
-	exit_light.light_energy = 4.2
-	exit_light.omni_range = 14.0
-	exit_light.omni_attenuation = 1.35
+	exit_light.light_color = Color(1.0, 0.08, 0.08) # Чистый неоновый красный
+	exit_light.light_energy = 2.4 # Мягкий локальный свет от таблички
+	exit_light.omni_range = 7.5   # Локальный радиус освещения
+	exit_light.omni_attenuation = 1.6
 	exit_light.position = Vector3(0.0, -0.32, 0.0)
 	fix_root.add_child(exit_light)
 
