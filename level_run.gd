@@ -45,36 +45,37 @@ func _setup_materials():
 	carpet_mat.albedo_texture = load("res://level_run_assets/run_carpet.png")
 	carpet_mat.uv1_scale = Vector3(1.0, 4.0, 1.0)
 	carpet_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	carpet_mat.roughness = 0.95
+	carpet_mat.roughness = 0.88 # Мягкий ворс с глубокими красными бликами
 
 	wall_mat = StandardMaterial3D.new()
 	wall_mat.albedo_texture = load("res://level_run_assets/run_wall.png")
 	wall_mat.uv1_scale = Vector3(4.0, 1.0, 1.0)
 	wall_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	wall_mat.roughness = 0.85
+	wall_mat.roughness = 0.55 # Реалистичная окрашенная больничная штукатурка
+	wall_mat.specular = 0.45
 
 	ceil_mat = StandardMaterial3D.new()
 	ceil_mat.albedo_texture = load("res://level_run_assets/run_ceiling.png")
 	ceil_mat.uv1_scale = Vector3(1.0, 4.0, 1.0)
 	ceil_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	ceil_mat.roughness = 0.9
+	ceil_mat.roughness = 0.75
 
 	exit_sign_mat = StandardMaterial3D.new()
 	exit_sign_mat.albedo_texture = load("res://level_run_assets/exit_sign.png")
 	exit_sign_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	exit_sign_mat.emission_enabled = true
-	exit_sign_mat.emission = Color(1.0, 0.1, 0.1)
-	exit_sign_mat.emission_energy_multiplier = 4.5
+	exit_sign_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED # Яркий чистый неоновый знак, не заливаемый тьмой
+	exit_sign_mat.emission_enabled = false
 
 	exit_box_mat = StandardMaterial3D.new()
-	exit_box_mat.albedo_color = Color(0.1, 0.02, 0.02)
-	exit_box_mat.roughness = 0.5
+	exit_box_mat.albedo_color = Color(0.12, 0.02, 0.02)
+	exit_box_mat.roughness = 0.4
+	exit_box_mat.metallic = 0.2
 
 	red_light_mat = StandardMaterial3D.new()
-	red_light_mat.albedo_color = Color(0.9, 0.1, 0.1)
+	red_light_mat.albedo_color = Color(1.0, 0.2, 0.2)
 	red_light_mat.emission_enabled = true
 	red_light_mat.emission = Color(1.0, 0.15, 0.15)
-	red_light_mat.emission_energy_multiplier = 3.5
+	red_light_mat.emission_energy_multiplier = 4.0
 
 func _setup_alarms():
 	alarm1_player = AudioStreamPlayer.new()
@@ -333,7 +334,7 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	sign_front.mesh = sf_quad
 	sign_front.material_override = exit_sign_mat
 	sign_front.position = Vector3(0.0, -0.32, 0.062)
-	sign_front.rotation_degrees = Vector3(0, 180, 0)
+	sign_front.rotation_degrees = Vector3(0, 0, 0)
 	fix_root.add_child(sign_front)
 
 	# Задняя светящаяся табличка EXIT
@@ -341,7 +342,7 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	sign_back.mesh = sf_quad
 	sign_back.material_override = exit_sign_mat
 	sign_back.position = Vector3(0.0, -0.32, -0.062)
-	sign_back.rotation_degrees = Vector3(0, 0, 0)
+	sign_back.rotation_degrees = Vector3(0, 180, 0)
 	fix_root.add_child(sign_back)
 
 	# Потолочный длинный светильник (встроенный в потолок)
@@ -350,10 +351,10 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 
 	# Яркий красный свет тревоги
 	var red_light = OmniLight3D.new()
-	red_light.light_color = Color(1.0, 0.06, 0.06)
-	red_light.light_energy = 3.6
-	red_light.omni_range = 14.0
-	red_light.omni_attenuation = 1.4
+	red_light.light_color = Color(1.0, 0.04, 0.04)
+	red_light.light_energy = 5.2
+	red_light.omni_range = 16.0
+	red_light.omni_attenuation = 1.6
 	red_light.position = Vector3(0.0, -0.45, 0.0)
 	fix_root.add_child(red_light)
 
@@ -427,7 +428,8 @@ func _spawn_chasing_horde():
 	pack_bacteria.global_position = Vector3(-0.7, 0.0, 21.0)
 	pack_bacteria.target_player = player
 	pack_bacteria.set_physics_process(false)
-	pack_bacteria.play_anim("Armature_001|stalkingpose", true)
+	pack_bacteria.trigger_aggro_chase()
+	pack_bacteria.play_anim("Armature_001|bendingOverScene", true)
 
 	# 2. Hazmat NPC
 	var hazmat_scene = preload("res://npc_hazmat.tscn")
@@ -443,7 +445,8 @@ func _spawn_chasing_horde():
 	var smiler_script = preload("res://smiler_enemy.gd")
 	pack_smiler = smiler_script.new()
 	add_child(pack_smiler)
-	pack_smiler.global_position = Vector3(0.0, 1.4, 18.0)
+	# Smiler летает на уровне груди/глаз человека (Y = 0.1, т.к. внутри спрайт на Y = 1.3)
+	pack_smiler.global_position = Vector3(0.0, 0.1, 18.0)
 	pack_smiler.target_player = player
 	pack_smiler.set_physics_process(false)
 
@@ -455,7 +458,7 @@ func _process_horde(delta: float, player_z: float):
 	var in_cutscene = player.get("is_in_cutscene") == true or player.get("is_active") == false
 	if in_cutscene:
 		if pack_smiler and is_instance_valid(pack_smiler):
-			pack_smiler.global_position = Vector3(0.0, 1.4, player_z + 18.0)
+			pack_smiler.global_position = Vector3(0.0, 0.1, player_z + 18.0)
 		if pack_bacteria and is_instance_valid(pack_bacteria):
 			pack_bacteria.global_position = Vector3(-0.7, 0.0, player_z + 21.0)
 		if pack_hazmat and is_instance_valid(pack_hazmat):
@@ -514,6 +517,10 @@ func _process_horde(delta: float, player_z: float):
 	# Обновляем позицию Bacteria (слева, чуть позади смайлера)
 	if pack_bacteria and is_instance_valid(pack_bacteria):
 		pack_bacteria.global_position.x = -0.7
+		# Анимация бега и крики бактерии при преследовании
+		pack_bacteria.play_anim("Armature_001|bendingOverScene", true)
+		pack_bacteria._update_chase_screams(delta)
+
 		var current_gap_b = pack_bacteria.global_position.z - player_z
 		var b_target_gap = target_gap + 2.5
 		var b_speed = 0.0
@@ -543,6 +550,10 @@ func _process_horde(delta: float, player_z: float):
 	# Обновляем позицию Hazmat (справа, замыкающий)
 	if pack_hazmat and is_instance_valid(pack_hazmat):
 		pack_hazmat.global_position.x = 0.7
+		# Анимация бега и крики преследователя
+		pack_hazmat.play_anim("Sprint")
+		pack_hazmat._update_chase_screams(delta)
+
 		var current_gap_h = pack_hazmat.global_position.z - player_z
 		var h_target_gap = target_gap + 4.5
 		var h_speed = 0.0
