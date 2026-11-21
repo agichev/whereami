@@ -30,6 +30,21 @@ var pack_smiler: CharacterBody3D = null
 var alarm1_player: AudioStreamPlayer = null
 var alarm2_player: AudioStreamPlayer = null
 
+# Дыхательный ивент паники
+var event_breath_player: AudioStreamPlayer = null
+var event_heartbeat_player: AudioStreamPlayer = null
+var is_breathing_event_active: bool = false
+var event_cooldown_timer: float = 8.0 # Сейчас часто (через 8-15 сек после старта / предыдущего ивента)
+var event_phase_timer: float = 0.0
+var event_phase: int = 0
+# Фазы:
+# 0 = Idle / Ожидание
+# 1 = Заглушение окружения (1.5с) и старт мужского вдоха-выдоха
+# 2 = Появление сердцебиения (2с), шаги стихают
+# 3 = Сердцебиение стучит (10с)
+# 4 = Сердцебиение затухает, шаги возвращаются (2с)
+# 5 = Плавный возврат всех звуков в норму (5с)
+
 # Дверь выхода в конце коридора
 var exit_door: InteractiveDoor = null
 var is_completed: bool = false
@@ -97,6 +112,22 @@ func _setup_alarms():
 	alarm2_player.finished.connect(func(): if is_instance_valid(alarm2_player): alarm2_player.play())
 	add_child(alarm2_player)
 
+	# Плеер глубокого мужского вдоха-выдоха
+	event_breath_player = AudioStreamPlayer.new()
+	event_breath_player.name = "EventMaleBreath"
+	event_breath_player.stream = load("res://audio/male_inhalation_exhalation.mp3")
+	event_breath_player.volume_db = 4.0
+	add_child(event_breath_player)
+
+	# Плеер приглушающего громкого сердцебиения
+	event_heartbeat_player = AudioStreamPlayer.new()
+	event_heartbeat_player.name = "EventHeartbeat"
+	event_heartbeat_player.stream = load("res://audio/heartbeat.mp3")
+	event_heartbeat_player.volume_db = -80.0
+	event_heartbeat_player.pitch_scale = 1.15
+	event_heartbeat_player.finished.connect(func(): if is_breathing_event_active and is_instance_valid(event_heartbeat_player): event_heartbeat_player.play())
+	add_child(event_heartbeat_player)
+
 func start_level(target_player: CharacterBody3D):
 	player = target_player
 	is_completed = false
@@ -161,6 +192,10 @@ func _exit_tree():
 		alarm1_player.stop()
 	if alarm2_player:
 		alarm2_player.stop()
+	if event_breath_player:
+		event_breath_player.stop()
+	if event_heartbeat_player:
+		event_heartbeat_player.stop()
 	if world_env_node and original_world_env:
 		world_env_node.environment = original_world_env
 
@@ -174,6 +209,9 @@ func _process(delta: float):
 	# Логика орды сущностей: они постоянно держатся позади игрока на расстоянии 12-16 метров,
 	# ускоряются, если игрок пытается остановиться, и ловят при замедлении.
 	_process_horde(delta, pz)
+
+	# Логика случайного ивента паники / глубокого дыхания и сердцебиения
+	_process_breathing_event(delta)
 
 	# Проверка достижения выхода (Z <= -LEVEL_LENGTH_METERS + 2.0)
 	if pz <= -LEVEL_LENGTH_METERS + 2.5 and not is_completed:
@@ -642,3 +680,118 @@ func _process_horde(delta: float, player_z: float):
 			if is_instance_valid(l):
 				# Если лампа осталась позади орды (Z больше trailing_z), выключаем свет
 				l.visible = (l.global_position.z <= trailing_z)
+
+func _process_breathing_event(delta: float):
+	if is_completed or not player:
+		return
+
+	# Не запускаем во время стартовой катсцены
+	var in_cutscene = player.get("is_in_cutscene") == true or player.get("is_active") == false
+	if in_cutscene:
+		return
+
+	if not is_breathing_event_active:
+		event_cooldown_timer -= delta
+		if event_cooldown_timer <= 0.0:
+			_start_breathing_event()
+		return
+
+	event_phase_timer += delta
+
+	match event_phase:
+		1:
+			# Фаза 1: Все звуки плавно заглушаются за 1.5 секунды, звучит глубокий мужской вдох-выдох
+			var t = clamp(event_phase_timer / 1.5, 0.0, 1.0)
+			# Приглушаем сирены на -24 dB
+			if alarm1_player: alarm1_player.volume_db = lerp(2.0, -24.0, t)
+			if alarm2_player: alarm2_player.volume_db = lerp(-1.0, -26.0, t)
+			# Приглушаем крики монстров
+			_set_horde_volume_attenuation(lerp(0.0, -22.0, t))
+
+			if event_phase_timer >= 2.0:
+				event_phase = 2
+				event_phase_timer = 0.0
+				if event_heartbeat_player:
+					event_heartbeat_player.volume_db = -25.0
+					event_heartbeat_player.play()
+
+		2:
+			# Фаза 2: В течение пары секунд (2.0с) нарастает сердцебиение, а шаги игрока стихают
+			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
+			if event_heartbeat_player:
+				event_heartbeat_player.volume_db = lerp(-25.0, 5.0, t) # Очень громкое сердцебиение (+5 dB)
+			# Шаги игрока затухают
+			_set_player_step_volume_attenuation(lerp(0.0, -40.0, t))
+
+			if event_phase_timer >= 2.0:
+				event_phase = 3
+				event_phase_timer = 0.0
+
+		3:
+			# Фаза 3: 10 секунд длится оглушающее сердцебиение, шаги неслышны
+			if event_heartbeat_player:
+				event_heartbeat_player.volume_db = 5.0
+			_set_player_step_volume_attenuation(-40.0)
+
+			if event_phase_timer >= 10.0:
+				event_phase = 4
+				event_phase_timer = 0.0
+
+		4:
+			# Фаза 4: Сердцебиение затухает за 2 секунды, и снова становятся слышны шаги игрока
+			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
+			if event_heartbeat_player:
+				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
+			_set_player_step_volume_attenuation(lerp(-40.0, 0.0, t))
+
+			if event_phase_timer >= 2.0:
+				if event_heartbeat_player:
+					event_heartbeat_player.stop()
+				event_phase = 5
+				event_phase_timer = 0.0
+
+		5:
+			# Фаза 5: В течение 5 секунд всё плавно возвращается в полную норму
+			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
+			if alarm1_player: alarm1_player.volume_db = lerp(-24.0, 2.0, t)
+			if alarm2_player: alarm2_player.volume_db = lerp(-26.0, -1.0, t)
+			_set_horde_volume_attenuation(lerp(-22.0, 0.0, t))
+			_set_player_step_volume_attenuation(0.0)
+
+			if event_phase_timer >= 5.0:
+				# Завершение ивента, сброс к норме
+				is_breathing_event_active = false
+				event_phase = 0
+				event_phase_timer = 0.0
+				# Следующий запуск (пока часто: через 12-20 секунд)
+				event_cooldown_timer = randf_range(12.0, 20.0)
+
+func _start_breathing_event():
+	is_breathing_event_active = true
+	event_phase = 1
+	event_phase_timer = 0.0
+
+	if event_breath_player:
+		event_breath_player.volume_db = 4.0
+		event_breath_player.play()
+
+func _set_horde_volume_attenuation(offset_db: float):
+	if pack_bacteria and is_instance_valid(pack_bacteria):
+		var p = pack_bacteria.find_child("BacteriaScreamPlayer", true, false)
+		if p and p is AudioStreamPlayer3D:
+			p.volume_db = max(-60.0, 14.0 + offset_db)
+	if pack_hazmat and is_instance_valid(pack_hazmat):
+		var p2 = pack_hazmat.find_child("ChaseScreamAudio", true, false)
+		if p2 and p2 is AudioStreamPlayer3D:
+			p2.volume_db = max(-60.0, 14.0 + offset_db)
+	if pack_smiler and is_instance_valid(pack_smiler):
+		var p3 = pack_smiler.find_child("SmilerStaticHum", true, false)
+		if p3 and p3 is AudioStreamPlayer3D:
+			p3.volume_db = max(-60.0, -4.0 + offset_db)
+
+func _set_player_step_volume_attenuation(offset_db: float):
+	if player and is_instance_valid(player):
+		var st = player.find_child("StepAudio", true, false)
+		if st and st is AudioStreamPlayer:
+			var base_vol = -3.0
+			st.volume_db = base_vol + offset_db
