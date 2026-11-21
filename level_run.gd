@@ -33,6 +33,7 @@ var alarm2_player: AudioStreamPlayer = null
 # Дверь выхода в конце коридора
 var exit_door: InteractiveDoor = null
 var is_completed: bool = false
+var active_exit_lights: Dictionary = {} # seg_idx -> Array[OmniLight3D]
 var original_world_env: Environment = null
 var run_world_env: Environment = null
 var world_env_node: WorldEnvironment = null
@@ -196,6 +197,7 @@ func _update_streaming(player_z: float):
 		if is_instance_valid(node):
 			node.queue_free()
 		active_segments.erase(s_idx)
+		active_exit_lights.erase(s_idx)
 
 	# Строим новые
 	for s_idx in range(min_seg, max_seg + 1):
@@ -280,10 +282,13 @@ func _build_segment(seg_idx: int) -> Node3D:
 		_add_locked_door(root, Vector3(-CORRIDOR_WIDTH * 0.5 + 0.04, 0.0, door_z), PI * 0.5)
 		_add_locked_door(root, Vector3(CORRIDOR_WIDTH * 0.5 - 0.04, 0.0, door_z), -PI * 0.5)
 
-	# 6. Подвесные красные знаки EXIT и тревожные красные лампы на потолке
+	# 6. Подвесные красные знаки EXIT на потолке
+	active_exit_lights[seg_idx] = []
 	for l_step in [4.0, 12.0]:
 		var light_z = start_z - l_step
-		_add_ceiling_exit_fixture(root, Vector3(0.0, CORRIDOR_HEIGHT, light_z))
+		var l_node = _add_ceiling_exit_fixture(root, Vector3(0.0, CORRIDOR_HEIGHT, light_z))
+		if l_node:
+			active_exit_lights[seg_idx].append(l_node)
 
 	# Стена позади на самом дальнем сегменте сзади (Z = +START_OFFSET_METERS)
 	if seg_idx == 0:
@@ -351,7 +356,7 @@ func _create_box_mesh(size: Vector3, pos: Vector3, mat: Material) -> MeshInstanc
 	mi.position = pos
 	return mi
 
-func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
+func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3) -> OmniLight3D:
 	var fix_root = Node3D.new()
 	fix_root.position = pos
 
@@ -402,6 +407,7 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	fix_root.add_child(exit_light)
 
 	parent.add_child(fix_root)
+	return exit_light
 
 func _build_exit_barrier():
 	var end_z = -LEVEL_LENGTH_METERS
@@ -622,3 +628,17 @@ func _process_horde(delta: float, player_z: float):
 		if pack_hazmat.global_position.distance_to(player.global_position) < 1.4:
 			_kill_player_by_horde()
 			return
+
+	# Реалистичная глухая тень позади нападающей орды:
+	# Выключаем лампы на сегментах, которые остались позади монстров,
+	# погружая коридор за спиной орды в естественную абсолютную тьму
+	var trailing_z = player_z + 24.0
+	if pack_hazmat and is_instance_valid(pack_hazmat):
+		trailing_z = max(trailing_z, pack_hazmat.global_position.z + 2.0)
+	for s_idx in active_exit_lights.keys():
+		var seg_z = START_OFFSET_METERS - float(s_idx) * SEGMENT_LENGTH
+		var lights = active_exit_lights[s_idx]
+		for l in lights:
+			if is_instance_valid(l):
+				# Если лампа осталась позади орды (Z больше trailing_z), выключаем свет
+				l.visible = (l.global_position.z <= trailing_z)
