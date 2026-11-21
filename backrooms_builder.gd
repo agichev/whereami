@@ -1664,8 +1664,11 @@ func _setup_exit_drawing_interaction(parent: Node3D, quad: MeshInstance3D):
 	area.collision_mask = 1 | 2
 	var col = CollisionShape3D.new()
 	var box = BoxShape3D.new()
-	box.size = Vector3(2.2, 3.0, 1.8)
+	# Компактный размер коллизии прямо вплотную к стене, чтобы не срабатывало издалека
+	box.size = Vector3(1.2, 1.8, 0.45)
 	col.shape = box
+	# Смещаем коллизию так, чтобы она выступала от плоскости рисунка всего на ~0.2 метра наружу от стены
+	col.position = Vector3(0.0, 0.0, 0.15)
 	area.add_child(col)
 	parent.add_child(area)
 	area.global_transform = quad.global_transform
@@ -2719,14 +2722,33 @@ func _setup_level_minus44():
 	if player:
 		player.play_getup_cutscene()
 
-# Обработчик касания рисунка (на время тестов любой рисунок телепортирует на Уровень !)
+# Обработчик касания рисунка (требуется ровно 2 касания вплотную для телепортации на Уровень !)
 func _on_exit_drawing_touched():
 	if current_level != 0 and current_level != 1:
 		return
 	if is_transitioning:
 		return
 
-	print("[DRAWING TOUCH] Touched drawing -> Transporting to Level ! (Run For Your Life)")
+	var current_time = Time.get_ticks_msec() / 1000.0
+	# Защита от дребезга триггера (минимум 0.8 сек между касаниями)
+	if current_time - last_exit_touch_time < 0.8:
+		return
+	last_exit_touch_time = current_time
+
+	# Если между касаниями прошло больше 12 секунд — сбрасываем счетчик
+	if exit_drawing_touch_count > 0 and (current_time - last_exit_touch_time > 12.0):
+		exit_drawing_touch_count = 0
+
+	exit_drawing_touch_count += 1
+	print("[DRAWING TOUCH] Drawing touch count: %d / 2" % exit_drawing_touch_count)
+
+	# Первое касание — предупреждающий звук и легкая реакция
+	if exit_drawing_touch_count < 2:
+		return
+
+	# Второе касание — телепортация на Уровень !
+	exit_drawing_touch_count = 0
+	print("[DRAWING TOUCH] 2nd touch confirmed -> Transporting to Level ! (Run For Your Life)")
 	_transition_to_level_run()
 
 # Полная уборка Уровня ! (Run For Your Life)
