@@ -678,6 +678,92 @@ func play_getup_cutscene():
 	is_active = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+# Быстрый подъем без фонового звука, испуганный взгляд назад и старт бега для Level Run (!)
+func play_level_run_intro_cutscene():
+	is_in_cutscene = true
+	is_active = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	visual_root.visible = false
+	if head_shadow_mesh:
+		head_shadow_mesh.visible = false
+
+	# Начальное положение: игрок на полу в красном полумраке коридора, смотрит вперед по коридору (-Z)
+	rotation.y = 0.0
+	player_yaw = 0.0
+	target_yaw = 0.0
+	current_yaw = 0.0
+
+	head_pivot.position = Vector3(0, 0.25, 0)
+	head_pivot.rotation.x = deg_to_rad(-50)
+	head_pivot.rotation.y = 0.0
+	head_pivot.rotation.z = deg_to_rad(15)
+	camera_pitch = deg_to_rad(-50)
+	target_pitch = deg_to_rad(-50)
+	current_pitch = deg_to_rad(-50)
+
+	var vhs_mat: ShaderMaterial = null
+	var vhs_node = get_tree().root.find_child("VHSOverlay", true, false)
+	if vhs_node and vhs_node.material is ShaderMaterial:
+		vhs_mat = vhs_node.material
+		vhs_mat.set_shader_parameter("black_fade", 1.0)
+
+	# Быстрый выход из темноты за 0.4 сек (без звука дыхания/подъема)
+	if vhs_mat:
+		var tw_fade = create_tween()
+		tw_fade.tween_method(func(val): vhs_mat.set_shader_parameter("black_fade", val), 1.0, 0.0, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+	await get_tree().create_timer(0.3).timeout
+
+	# 1. Быстрый подъем на ноги за 0.6 сек
+	var tw_up = create_tween().set_parallel(true)
+	tw_up.tween_property(head_pivot, "position:y", 1.55, 0.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw_up.tween_property(head_pivot, "rotation:x", 0.0, 0.6).set_trans(Tween.TRANS_CUBIC)
+	tw_up.tween_property(head_pivot, "rotation:z", 0.0, 0.6).set_trans(Tween.TRANS_SINE)
+	await tw_up.finished
+
+	# 2. Испуганный быстрый поворот головы назад (на 160 градусов назад, к преследователям)
+	var tw_look_back = create_tween()
+	tw_look_back.tween_property(head_pivot, "rotation:y", deg_to_rad(160), 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	await tw_look_back.finished
+	await get_tree().create_timer(0.35).timeout
+
+	# 3. Резкий разворот взгляда вперед по коридору (куда бежать)
+	var tw_look_fwd = create_tween()
+	tw_look_fwd.tween_property(head_pivot, "rotation:y", 0.0, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	await tw_look_fwd.finished
+
+	# 4. Начало бега: человек уже разгоняется вперед
+	head_pivot.position = Vector3(0, 1.55, 0)
+	head_pivot.rotation = Vector3.ZERO
+	camera_pitch = 0.0
+	target_pitch = 0.0
+	current_pitch = 0.0
+
+	if neck_bone_idx != -1 and char_skeleton:
+		var neck_bone_g = char_skeleton.get_bone_global_pose(neck_bone_idx)
+		var local_neck_pos = visual_root.transform * model_slot.transform * char_skeleton.transform * neck_bone_g.origin
+		head_pivot.position = Vector3(0, local_neck_pos.y + 0.12, local_neck_pos.z - 0.12)
+		if head_shadow_mesh:
+			head_shadow_mesh.position = Vector3(local_neck_pos.x, local_neck_pos.y + 0.11, local_neck_pos.z - 0.02)
+
+	if head_bone_idx != -1 and char_skeleton:
+		char_skeleton.set_bone_pose_scale(head_bone_idx, Vector3(0.001, 0.001, 0.001))
+		if head_end_idx != -1:
+			char_skeleton.set_bone_pose_scale(head_end_idx, Vector3(0.001, 0.001, 0.001))
+
+	await get_tree().process_frame
+	visual_root.visible = true
+	if head_shadow_mesh:
+		head_shadow_mesh.visible = true
+
+	# Передаем управление игроку
+	is_in_cutscene = false
+	is_active = true
+	enable_infinite_stamina_only()
+	is_in_danger_chase = true
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
 func _physics_process(dt: float):
 	if not is_active:
 		velocity = Vector3.ZERO
@@ -816,10 +902,10 @@ func handle_audio_fx(dt: float, is_sprinting: bool):
 		if not heartbeat_audio_player.playing:
 			heartbeat_audio_player.play()
 		if adrenaline_amount > 0.02:
-			# Отчетливое, тревожное глухое биение сердца (от -24dB до -4dB)
-			var hb_vol = lerp(-32.0, -4.0, adrenaline_amount)
+			# Отчетливое, тревожное громкое биение сердца (до +3dB при погоне)
+			var hb_vol = lerp(-28.0, 3.0, adrenaline_amount)
 			heartbeat_audio_player.volume_db = hb_vol
-			heartbeat_audio_player.pitch_scale = lerp(0.95, 1.25, adrenaline_amount) # Ускорение пульса от страха
+			heartbeat_audio_player.pitch_scale = lerp(0.95, 1.30, adrenaline_amount) # Ускорение пульса от страха
 		else:
 			heartbeat_audio_player.volume_db = -80.0
 

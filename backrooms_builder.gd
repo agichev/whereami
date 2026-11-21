@@ -91,6 +91,12 @@ var level44_exit_door: Node3D = null
 var level44_audio_player: AudioStreamPlayer = null
 var level44_ost_stream = preload("res://audio/level44_night_theme.ogg")
 
+# Уровень "!" (Level Run: Run For Your Life!)
+var level_run_script = preload("res://level_run.gd")
+var level_run_generator: Node3D = null
+var exit_drawing_touch_count: int = 0 # Счетчик касаний рисунка с надписью EXIT (2 касания = переход на Level !)
+var last_exit_touch_time: float = -999.0
+
 # Ассеты Уровня 1 (Level 1: Habitable Zone - Бетонный склад/парковка с лужами и мерцающими лампами):
 var level1_pillar_model = preload("res://level1_assets/GLB/MOD_21_Pillar_Square.glb")
 var level1_lamp_model = preload("res://level1_assets/GLB/PROP_01_FluorescentFixture.glb")
@@ -659,7 +665,7 @@ func _input(event: InputEvent):
 			KEY_J: "j", KEY_I: "i", KEY_L: "l", KEY_K: "k",
 			KEY_Y: "y", KEY_O: "o", KEY_U: "u", KEY_P: "p",
 			KEY_M: "m", KEY_S: "s", KEY_G: "g", KEY_H: "h",
-			KEY_E: "e", KEY_W: "w", KEY_F: "f"
+			KEY_E: "e", KEY_W: "w", KEY_F: "f", KEY_R: "r", KEY_N: "n"
 		}
 
 		if key_to_char.has(event.keycode):
@@ -705,6 +711,13 @@ func _check_cheat_codes():
 			player._set_flashlight_enabled(flashlight_before_cheat)
 		print("[CHEAT] Go to Level -44 (lhm)")
 		_transition_to_level_minus44()
+		return
+
+	# Читкод "run" - телепорт на Уровень "!" (Level Run)
+	if cheat_buffer.ends_with("run"):
+		cheat_buffer = ""
+		print("[CHEAT] Go to Level ! (run)")
+		_transition_to_level_run()
 		return
 
 	# 6. Читкод "klm" - спавнит дверь по направлению взгляда на ближайшей стене
@@ -1565,6 +1578,26 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	parent.add_child(quad)
 	spawned_decal_positions.append(cur_pos_2d)
 
+	# Если это рисунок с надписью EXIT (user_drawing_vert_5) — добавляем интерактивную триггерную зону касания
+	if tex == vert_drawings[4]:
+		_setup_exit_drawing_interaction(parent, quad)
+
+func _setup_exit_drawing_interaction(parent: Node3D, quad: MeshInstance3D):
+	var area = Area3D.new()
+	area.name = "ExitDrawingTouchArea"
+	var col = CollisionShape3D.new()
+	var box = BoxShape3D.new()
+	box.size = Vector3(1.8, 2.8, 1.4)
+	col.shape = box
+	area.add_child(col)
+	area.global_transform = quad.global_transform
+	parent.add_child(area)
+
+	area.body_entered.connect(func(body):
+		if body == player or (body is CharacterBody3D and body.has_method("interact_with_door")):
+			_on_exit_drawing_touched()
+	)
+
 # Редкий спавн интерактивной двери в стене (1 на 200 метров)
 func maybe_spawn_door_in_chunk(parent: Node3D, c: Vector2i, grid: Array, x0: float, z0: float, lvl_type: int):
 	if c == Vector2i.ZERO:
@@ -2023,6 +2056,7 @@ func _transition_to_level_0():
 	current_level = 0
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
+	_teardown_level_run()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2178,6 +2212,7 @@ func _transition_to_level_1():
 	current_level = 1
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
+	_teardown_level_run()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2315,6 +2350,7 @@ func _transition_to_level_89():
 	current_level = 89
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
+	_teardown_level_run()
 
 	# Замораживаем игрока на время видео
 	if player:
@@ -2605,6 +2641,163 @@ func _setup_level_minus44():
 
 	if player:
 		player.play_getup_cutscene()
+
+# Обработчик касания рисунка с надписью EXIT
+func _on_exit_drawing_touched():
+	if current_level != 0 and current_level != 1:
+		return
+	if is_transitioning:
+		return
+
+	var current_time = Time.get_ticks_msec() / 1000.0
+	# Защита от спама триггера в один и тот же момент (интервал минимум 0.8с между касаниями)
+	if current_time - last_exit_touch_time < 0.8:
+		return
+	last_exit_touch_time = current_time
+
+	exit_drawing_touch_count += 1
+	print("[EXIT DRAWING] Touched %d time(s)" % exit_drawing_touch_count)
+
+	if exit_drawing_touch_count >= 2:
+		exit_drawing_touch_count = 0
+		print("[LEVEL !] Double touch on EXIT drawing -> Transporting to Level ! (Run For Your Life)")
+		_transition_to_level_run()
+
+# Полная уборка Уровня ! (Run For Your Life)
+func _teardown_level_run():
+	if level_run_generator and is_instance_valid(level_run_generator):
+		level_run_generator.queue_free()
+	level_run_generator = null
+
+# Переход на Уровень "!" (Level Run)
+func _transition_to_level_run():
+	if is_transitioning:
+		return
+	is_transitioning = true
+	current_level = 99 # 99 = Level ! (Run For Your Life)
+	has_escaped_monster_once = false
+	_teardown_level_minus44()
+	_teardown_level_run()
+	_teardown_level_run()
+
+	# Замораживаем игрока на время перехода
+	if player:
+		player.is_active = false
+		player.velocity = Vector3.ZERO
+		if player.visual_root:
+			player.visual_root.visible = false
+		if player.head_shadow_mesh:
+			player.head_shadow_mesh.visible = false
+
+	# Удаляем NPC/монстров предыдущего уровня
+	if spawned_npc and is_instance_valid(spawned_npc):
+		spawned_npc.queue_free()
+		spawned_npc = null
+	if spawned_bacteria and is_instance_valid(spawned_bacteria):
+		spawned_bacteria.queue_free()
+		spawned_bacteria = null
+	if spawned_urban_observer and is_instance_valid(spawned_urban_observer):
+		spawned_urban_observer.queue_free()
+		spawned_urban_observer = null
+	for s in spawned_smilers:
+		if is_instance_valid(s):
+			s.queue_free()
+	spawned_smilers.clear()
+
+	# Останавливаем фоновые звуки
+	if ambience_player:
+		ambience_player.stop()
+	if level1_audio_player and is_instance_valid(level1_audio_player):
+		level1_audio_player.stop()
+	if level89_audio_player and is_instance_valid(level89_audio_player):
+		level89_audio_player.stop()
+
+	# Очищаем чанки
+	for c in active_chunks.keys():
+		var cn = active_chunks[c]
+		if is_instance_valid(cn):
+			cn.queue_free()
+	active_chunks.clear()
+	active_omni_lights.clear()
+	active_lamp_meshes.clear()
+	if corridors_root:
+		for ch in corridors_root.get_children():
+			ch.queue_free()
+
+	# Видео-переход
+	var ui = find_child("UI", true, false)
+	if not ui:
+		_setup_level_run()
+		return
+
+	var vp = VideoStreamPlayer.new()
+	vp.name = "LevelRunTransitionPlayer"
+	vp.expand = true
+	vp.anchor_right = 1.0
+	vp.anchor_bottom = 1.0
+	vp.stream = load("res://death_jumpscare.ogv")
+	vp.volume_db = 8.0
+	vp.z_index = 100
+	ui.add_child(vp)
+
+	vp.finished.connect(func():
+		vp.queue_free()
+		_setup_level_run()
+	)
+	vp.play()
+
+func _setup_level_run():
+	is_transitioning = false
+	current_level = 99
+	_mark_level_visited(99)
+
+	# Красное тревожное окружение
+	var env_node = get_node_or_null("WorldEnvironment")
+	if env_node:
+		var env = Environment.new()
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.04, 0.0, 0.0)
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color(0.4, 0.02, 0.02)
+		env.ambient_light_energy = 0.5
+		env.tonemap_mode = Environment.TONE_MAPPER_ACES
+		env.tonemap_exposure = 1.05
+		env.glow_enabled = true
+		env.glow_intensity = 0.8
+		env.glow_bloom = 0.3
+		env.fog_enabled = true
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_light_color = Color(0.3, 0.01, 0.01)
+		env.fog_light_energy = 0.8
+		env.fog_density = 0.015
+		env.fog_depth_begin = 4.0
+		env.fog_depth_end = 65.0
+		env_node.environment = env
+
+	var old_moon = get_node_or_null("EveningCityLight")
+	if old_moon:
+		old_moon.queue_free()
+
+	# Создаем генератор коридора Level Run
+	level_run_generator = level_run_script.new()
+	level_run_generator.name = "LevelRunManager"
+	level_run_generator.player_reached_exit.connect(func():
+		print("[LEVEL !] Player survived and entered exit door!")
+		_transition_to_random_level()
+	)
+	add_child(level_run_generator)
+
+	if player:
+		player.global_position = Vector3(0.0, 0.1, 0.0)
+		player.velocity = Vector3.ZERO
+		# Бесконечная стамина и повышенный адреналин (сердцебиение)
+		if player.has_method("enable_infinite_stamina_only"):
+			player.enable_infinite_stamina_only()
+
+	level_run_generator.start_level(player)
+
+	if player and player.has_method("play_level_run_intro_cutscene"):
+		player.play_level_run_intro_cutscene()
 
 # Генерация бесконечного вечернего города Level 89
 # Каждый чанк ровно 16.0м х 16.0м состыкован по сетке:
