@@ -629,9 +629,10 @@ func _process(delta):
 		var chunk_z = int(floor(pz / CHUNK_SIZE))
 		var p_chunk = Vector2i(chunk_x, chunk_z)
 
-		# На Уровне -44 своя генерация секторов: стриминг чанков других уровней только мешает
-		# (иначе поверх бетонного комплекса достраивались стены Уровня 0 и игрок стоял внутри них)
-		if p_chunk != current_player_chunk and current_level != -44:
+		# На Уровне -44 и Уровне 99 (!) своя независимая генерация:
+		# стриминг чанков других уровней (0, 1, 89) строго отключается,
+		# иначе поверх Уровня ! или бетонного комплекса спавнятся желтые стены и комнаты Уровня 0!
+		if p_chunk != current_player_chunk and current_level != -44 and current_level != 99:
 			current_player_chunk = p_chunk
 			update_chunks_around_player()
 
@@ -1232,6 +1233,8 @@ func _on_settings_changed():
 			update_chunks_around_player()
 
 func update_chunks_around_player():
+	if current_level == -44 or current_level == 99:
+		return
 	var target_chunks = {}
 	var cx0 = current_player_chunk.x
 	var cz0 = current_player_chunk.y

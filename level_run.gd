@@ -44,23 +44,27 @@ func _setup_materials():
 	carpet_mat = StandardMaterial3D.new()
 	carpet_mat.albedo_texture = load("res://level_run_assets/run_carpet.png")
 	carpet_mat.uv1_scale = Vector3(1.0, 4.0, 1.0)
+	carpet_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	carpet_mat.roughness = 0.95
 
 	wall_mat = StandardMaterial3D.new()
 	wall_mat.albedo_texture = load("res://level_run_assets/run_wall.png")
 	wall_mat.uv1_scale = Vector3(4.0, 1.0, 1.0)
+	wall_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	wall_mat.roughness = 0.85
 
 	ceil_mat = StandardMaterial3D.new()
 	ceil_mat.albedo_texture = load("res://level_run_assets/run_ceiling.png")
 	ceil_mat.uv1_scale = Vector3(1.0, 4.0, 1.0)
+	ceil_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	ceil_mat.roughness = 0.9
 
 	exit_sign_mat = StandardMaterial3D.new()
 	exit_sign_mat.albedo_texture = load("res://level_run_assets/exit_sign.png")
+	exit_sign_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	exit_sign_mat.emission_enabled = true
 	exit_sign_mat.emission = Color(1.0, 0.1, 0.1)
-	exit_sign_mat.emission_energy_multiplier = 4.0
+	exit_sign_mat.emission_energy_multiplier = 4.5
 
 	exit_box_mat = StandardMaterial3D.new()
 	exit_box_mat.albedo_color = Color(0.1, 0.02, 0.02)
@@ -112,16 +116,16 @@ func _exit_tree():
 	if alarm2_player:
 		alarm2_player.stop()
 
-func _process(_delta: float):
+func _process(delta: float):
 	if not player or is_completed:
 		return
 
 	var pz = player.global_position.z
 	_update_streaming(pz)
 
-	# Логика орды сущностей: они постоянно держатся позади игрока на расстоянии 8-16 метров,
+	# Логика орды сущностей: они постоянно держатся позади игрока на расстоянии 12-16 метров,
 	# ускоряются, если игрок пытается остановиться, и ловят при замедлении.
-	_process_horde(pz)
+	_process_horde(delta, pz)
 
 	# Проверка достижения выхода (Z <= -LEVEL_LENGTH_METERS + 2.0)
 	if pz <= -LEVEL_LENGTH_METERS + 2.5 and not is_completed:
@@ -225,8 +229,8 @@ func _build_segment(seg_idx: int) -> Node3D:
 	# 5. Двери по бокам (не открывающиеся, запертые двери больничных палат)
 	for d_step in [4.0, 12.0]:
 		var door_z = start_z - d_step
-		_add_locked_door(root, Vector3(-CORRIDOR_WIDTH * 0.5, 0.0, door_z), PI * 0.5)
-		_add_locked_door(root, Vector3(CORRIDOR_WIDTH * 0.5, 0.0, door_z), -PI * 0.5)
+		_add_locked_door(root, Vector3(-CORRIDOR_WIDTH * 0.5 + 0.04, 0.0, door_z), PI * 0.5)
+		_add_locked_door(root, Vector3(CORRIDOR_WIDTH * 0.5 - 0.04, 0.0, door_z), -PI * 0.5)
 
 	# 6. Подвесные красные знаки EXIT и тревожные красные лампы на потолке
 	for l_step in [4.0, 12.0]:
@@ -257,24 +261,60 @@ func _add_locked_door(parent: Node3D, pos: Vector3, rot_y: float):
 	door_node.position = pos
 	door_node.rotation.y = rot_y
 
-	# Коробка и полотно двери
-	var frame = MeshInstance3D.new()
-	var f_box = BoxMesh.new()
-	f_box.size = Vector3(1.0, 2.2, 0.1)
-	frame.mesh = f_box
+	# Наличник двери
+	var trim_mat = StandardMaterial3D.new()
+	trim_mat.albedo_color = Color(0.18, 0.18, 0.19)
+	trim_mat.roughness = 0.5
+	trim_mat.metallic = 0.4
 
+	# Дверное полотно
 	var d_mat = StandardMaterial3D.new()
-	d_mat.albedo_color = Color(0.28, 0.08, 0.08) # Больничная темно-красная дверь
-	d_mat.roughness = 0.6
-	frame.material_override = d_mat
-	frame.position = Vector3(0.0, 1.1, 0.0)
+	d_mat.albedo_color = Color(0.24, 0.06, 0.06) # Темно-бордовая больничная краска
+	d_mat.roughness = 0.7
 
-	door_node.add_child(frame)
+	# Внешняя рама/наличник
+	var frame_left = _create_box_mesh(Vector3(0.06, 2.15, 0.08), Vector3(-0.48, 1.075, 0.0), trim_mat)
+	var frame_right = _create_box_mesh(Vector3(0.06, 2.15, 0.08), Vector3(0.48, 1.075, 0.0), trim_mat)
+	var frame_top = _create_box_mesh(Vector3(1.02, 0.06, 0.08), Vector3(0.0, 2.12, 0.0), trim_mat)
+	door_node.add_child(frame_left)
+	door_node.add_child(frame_right)
+	door_node.add_child(frame_top)
+
+	# Дверная створка (утоплена в раму)
+	var leaf = _create_box_mesh(Vector3(0.90, 2.08, 0.04), Vector3(0.0, 1.04, 0.0), d_mat)
+	door_node.add_child(leaf)
+
+	# Металлическая ручка двери
+	var handle_mat = StandardMaterial3D.new()
+	handle_mat.albedo_color = Color(0.75, 0.75, 0.77)
+	handle_mat.metallic = 0.85
+	handle_mat.roughness = 0.25
+	var handle = _create_box_mesh(Vector3(0.12, 0.03, 0.05), Vector3(0.35, 1.0, 0.035), handle_mat)
+	door_node.add_child(handle)
+
 	parent.add_child(door_node)
+
+func _create_box_mesh(size: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var mi = MeshInstance3D.new()
+	var b = BoxMesh.new()
+	b.size = size
+	mi.mesh = b
+	mi.material_override = mat
+	mi.position = pos
+	return mi
 
 func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	var fix_root = Node3D.new()
 	fix_root.position = pos
+
+	# Подвесные металлические стержни от потолка к знаку
+	var rod_mat = StandardMaterial3D.new()
+	rod_mat.albedo_color = Color(0.2, 0.2, 0.22)
+	rod_mat.metallic = 0.8
+	var rod_l = _create_box_mesh(Vector3(0.02, 0.22, 0.02), Vector3(-0.25, -0.11, 0.0), rod_mat)
+	var rod_r = _create_box_mesh(Vector3(0.02, 0.22, 0.02), Vector3(0.25, -0.11, 0.0), rod_mat)
+	fix_root.add_child(rod_l)
+	fix_root.add_child(rod_r)
 
 	# Корпус знака EXIT (подвесной)
 	var box_mesh = MeshInstance3D.new()
@@ -282,26 +322,38 @@ func _add_ceiling_exit_fixture(parent: Node3D, pos: Vector3):
 	b_box.size = Vector3(0.7, 0.35, 0.12)
 	box_mesh.mesh = b_box
 	box_mesh.material_override = exit_box_mat
-	box_mesh.position = Vector3(0.0, -0.22, 0.0)
+	box_mesh.position = Vector3(0.0, -0.32, 0.0)
 	fix_root.add_child(box_mesh)
 
-	# Лицевая светящаяся табличка EXIT с надписью
+	# Лицевая светящаяся табличка EXIT с надписью (лицом к бегущему игроку, смотрящему в -Z)
 	var sign_front = MeshInstance3D.new()
 	var sf_quad = QuadMesh.new()
 	sf_quad.size = Vector2(0.66, 0.33)
 	sign_front.mesh = sf_quad
 	sign_front.material_override = exit_sign_mat
-	# Смотрит в сторону бегущего игрока (+Z)
-	sign_front.position = Vector3(0.0, -0.22, 0.062)
+	sign_front.position = Vector3(0.0, -0.32, 0.062)
+	sign_front.rotation_degrees = Vector3(0, 180, 0)
 	fix_root.add_child(sign_front)
 
-	# Красный свет тревоги
+	# Задняя светящаяся табличка EXIT
+	var sign_back = MeshInstance3D.new()
+	sign_back.mesh = sf_quad
+	sign_back.material_override = exit_sign_mat
+	sign_back.position = Vector3(0.0, -0.32, -0.062)
+	sign_back.rotation_degrees = Vector3(0, 0, 0)
+	fix_root.add_child(sign_back)
+
+	# Потолочный длинный светильник (встроенный в потолок)
+	var ceiling_lamp_panel = _create_box_mesh(Vector3(1.2, 0.04, 0.4), Vector3(0.0, -0.02, 0.0), red_light_mat)
+	fix_root.add_child(ceiling_lamp_panel)
+
+	# Яркий красный свет тревоги
 	var red_light = OmniLight3D.new()
-	red_light.light_color = Color(1.0, 0.08, 0.08)
-	red_light.light_energy = 2.8
-	red_light.omni_range = 11.0
-	red_light.omni_attenuation = 1.6
-	red_light.position = Vector3(0.0, -0.35, 0.0)
+	red_light.light_color = Color(1.0, 0.06, 0.06)
+	red_light.light_energy = 3.6
+	red_light.omni_range = 14.0
+	red_light.omni_attenuation = 1.4
+	red_light.position = Vector3(0.0, -0.45, 0.0)
 	fix_root.add_child(red_light)
 
 	parent.add_child(fix_root)
@@ -336,56 +388,128 @@ func _build_exit_barrier():
 	# Сразу распахиваем её
 	exit_door.call_deferred("toggle")
 
+func _kill_player_by_horde():
+	if is_completed:
+		return
+	is_completed = true
+	if player:
+		player.is_active = false
+		player.velocity = Vector3.ZERO
+	
+	# Показываем скример смерти и перезагружаем в меню
+	var ui = get_tree().root.find_child("UI", true, false)
+	if not ui:
+		get_tree().reload_current_scene()
+		return
+
+	var vp = VideoStreamPlayer.new()
+	vp.name = "LevelRunDeathJumpscare"
+	vp.expand = true
+	vp.anchor_right = 1.0
+	vp.anchor_bottom = 1.0
+	vp.stream = load("res://death_jumpscare.ogv")
+	vp.volume_db = 8.0
+	vp.z_index = 100
+	ui.add_child(vp)
+
+	vp.finished.connect(func():
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_tree().reload_current_scene()
+	)
+	vp.play()
+
 func _spawn_chasing_horde():
 	# 1. Bacteria
 	var bacteria_scene = preload("res://npc_bacteria.tscn")
 	pack_bacteria = bacteria_scene.instantiate()
 	add_child(pack_bacteria)
-	pack_bacteria.global_position = Vector3(-0.7, 0.0, 10.0)
+	pack_bacteria.global_position = Vector3(-0.7, 0.0, 18.0)
 	pack_bacteria.target_player = player
-	pack_bacteria.start_peeker_sequence(Vector3(0, 0, -1))
-	pack_bacteria.trigger_aggro_chase()
+	pack_bacteria.set_physics_process(false)
+	pack_bacteria.play_anim("Armature_001|stalkingpose", true)
 
 	# 2. Hazmat NPC
 	var hazmat_scene = preload("res://npc_hazmat.tscn")
 	pack_hazmat = hazmat_scene.instantiate()
 	add_child(pack_hazmat)
-	pack_hazmat.global_position = Vector3(0.7, 0.0, 14.0)
+	pack_hazmat.global_position = Vector3(0.7, 0.0, 22.0)
 	pack_hazmat.target_player = player
 	pack_hazmat.trigger_aggro_chase()
+	pack_hazmat.set_physics_process(false)
+	pack_hazmat.play_anim("Sprint")
 
 	# 3. Smiler
 	var smiler_script = preload("res://smiler_enemy.gd")
 	pack_smiler = smiler_script.new()
 	add_child(pack_smiler)
-	pack_smiler.global_position = Vector3(0.0, 1.4, 7.0)
+	pack_smiler.global_position = Vector3(0.0, 1.4, 15.0)
 	pack_smiler.target_player = player
+	pack_smiler.set_physics_process(false)
 
-func _process_horde(player_z: float):
-	# Держим орду на динамической дистанции сзади игрока:
-	# Если игрок бежит на полной скорости (спринт ~6 м/с), сущности держатся на дистанции 8-15 метров сзади.
-	# Если игрок останавливается или бежит назад — сущности настигают и убивают его!
-	var desired_z = player_z + 9.0
+func _process_horde(delta: float, player_z: float):
+	if is_completed or not player:
+		return
 
+	# Во время интро-катсцены орда не нападает, а ждет на безопасной дистанции 16-20 метров сзади
+	if player.is_in_cutscene or not player.is_active:
+		if pack_smiler and is_instance_valid(pack_smiler):
+			pack_smiler.global_position = Vector3(0.0, 1.4, player_z + 14.0)
+		if pack_bacteria and is_instance_valid(pack_bacteria):
+			pack_bacteria.global_position = Vector3(-0.7, 0.0, player_z + 16.5)
+		if pack_hazmat and is_instance_valid(pack_hazmat):
+			pack_hazmat.global_position = Vector3(0.7, 0.0, player_z + 18.5)
+		return
+
+	# Логика орды сущностей:
+	# Игрок спринтует со скоростью 6.0 м/с (бесконечная стамина).
+	# Базовая комфортная дистанция преследования — 12-16 метров сзади.
+	# Если игрок бежит вперед на спринте: сущности бегут сзади на расстоянии ~13 метров, создавая огромное напряжение и крики.
+	# Если игрок остановился или бежит медленно: сущности быстро настигают его со скоростью 7.0 м/с и убивают при дистанции < 1.4м!
+	
+	var player_speed = -player.velocity.z # скорость движения вперед по -Z
+	var chase_speed = 6.8 # скорость монстров при настигании остановившегося игрока
+	
+	# Обновляем позицию Smiler
 	if pack_smiler and is_instance_valid(pack_smiler):
 		pack_smiler.global_position.x = 0.0
-		# Не даем отдалиться больше чем на 16м назад
-		if pack_smiler.global_position.z > player_z + 16.0:
-			pack_smiler.global_position.z = player_z + 16.0
-		# Если игрок повернул назад и подошел ближе 1.5м — смерть
-		if pack_smiler.global_position.distance_to(player.global_position) < 1.4:
-			pack_smiler._trigger_kill_player()
+		var dist_z = pack_smiler.global_position.z - player_z
+		if dist_z > 14.0:
+			pack_smiler.global_position.z = move_toward(pack_smiler.global_position.z, player_z + 13.0, 8.0 * delta)
+		elif dist_z < 12.0 and player_speed > 4.5:
+			pack_smiler.global_position.z = player_z + 12.0
+		else:
+			pack_smiler.global_position.z -= chase_speed * delta
 
+		if pack_smiler.global_position.distance_to(player.global_position) < 1.4:
+			_kill_player_by_horde()
+			return
+
+	# Обновляем позицию Bacteria
 	if pack_bacteria and is_instance_valid(pack_bacteria):
 		pack_bacteria.global_position.x = -0.7
-		if pack_bacteria.global_position.z > player_z + 17.0:
-			pack_bacteria.global_position.z = player_z + 17.0
-		if pack_bacteria.global_position.distance_to(player.global_position) < 1.4:
-			pack_bacteria.catch_player_and_send_to_level89()
+		var dist_z = pack_bacteria.global_position.z - player_z
+		if dist_z > 16.0:
+			pack_bacteria.global_position.z = move_toward(pack_bacteria.global_position.z, player_z + 15.0, 8.5 * delta)
+		elif dist_z < 13.5 and player_speed > 4.5:
+			pack_bacteria.global_position.z = player_z + 13.5
+		else:
+			pack_bacteria.global_position.z -= chase_speed * delta
 
+		if pack_bacteria.global_position.distance_to(player.global_position) < 1.4:
+			_kill_player_by_horde()
+			return
+
+	# Обновляем позицию Hazmat
 	if pack_hazmat and is_instance_valid(pack_hazmat):
 		pack_hazmat.global_position.x = 0.7
-		if pack_hazmat.global_position.z > player_z + 18.0:
-			pack_hazmat.global_position.z = player_z + 18.0
+		var dist_z = pack_hazmat.global_position.z - player_z
+		if dist_z > 18.0:
+			pack_hazmat.global_position.z = move_toward(pack_hazmat.global_position.z, player_z + 16.5, 9.0 * delta)
+		elif dist_z < 15.0 and player_speed > 4.5:
+			pack_hazmat.global_position.z = player_z + 15.0
+		else:
+			pack_hazmat.global_position.z -= chase_speed * delta
+
 		if pack_hazmat.global_position.distance_to(player.global_position) < 1.4:
-			pack_hazmat.catch_player_and_send_to_level89()
+			_kill_player_by_horde()
+			return

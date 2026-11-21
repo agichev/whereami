@@ -688,19 +688,20 @@ func play_level_run_intro_cutscene():
 	if head_shadow_mesh:
 		head_shadow_mesh.visible = false
 
-	# Начальное положение: игрок на полу в красном полумраке коридора, смотрит вперед по коридору (-Z)
+	# Начальное положение: игрок только что рухнул на ковер, лицо прижато к полу в красном полумраке коридора
 	rotation.y = 0.0
 	player_yaw = 0.0
 	target_yaw = 0.0
 	current_yaw = 0.0
 
-	head_pivot.position = Vector3(0, 0.25, 0)
-	head_pivot.rotation.x = deg_to_rad(-50)
+	# Камера у самого ковра (0.18м), наклон -75 градусов, голова завалилась вбок на 20 градусов
+	head_pivot.position = Vector3(0, 0.18, 0)
+	head_pivot.rotation.x = deg_to_rad(-75)
 	head_pivot.rotation.y = 0.0
-	head_pivot.rotation.z = deg_to_rad(15)
-	camera_pitch = deg_to_rad(-50)
-	target_pitch = deg_to_rad(-50)
-	current_pitch = deg_to_rad(-50)
+	head_pivot.rotation.z = deg_to_rad(20)
+	camera_pitch = deg_to_rad(-75)
+	target_pitch = deg_to_rad(-75)
+	current_pitch = deg_to_rad(-75)
 
 	var vhs_mat: ShaderMaterial = null
 	var vhs_node = get_tree().root.find_child("VHSOverlay", true, false)
@@ -708,42 +709,52 @@ func play_level_run_intro_cutscene():
 		vhs_mat = vhs_node.material
 		vhs_mat.set_shader_parameter("black_fade", 1.0)
 
-	# Быстрый выход из темноты за 0.4 сек (без звука дыхания/подъема)
+	# Быстрый выход из темноты за 0.35 сек
 	if vhs_mat:
 		var tw_fade = create_tween()
-		tw_fade.tween_method(func(val): vhs_mat.set_shader_parameter("black_fade", val), 1.0, 0.0, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tw_fade.tween_method(func(val): vhs_mat.set_shader_parameter("black_fade", val), 1.0, 0.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
-	await get_tree().create_timer(0.3).timeout
+	await get_tree().create_timer(0.2).timeout
 
-	# 1. Быстрый подъем на ноги за 0.6 сек
+	# 1. Фаза 1: Упор руками в пол (приподнимается до груди Y=0.55м, наклон -40, голова выравнивается)
+	var tw_push = create_tween().set_parallel(true)
+	tw_push.tween_property(head_pivot, "position:y", 0.55, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw_push.tween_property(head_pivot, "rotation:x", deg_to_rad(-40), 0.45).set_trans(Tween.TRANS_SINE)
+	tw_push.tween_property(head_pivot, "rotation:z", deg_to_rad(-5), 0.45).set_trans(Tween.TRANS_SINE)
+	await tw_push.finished
+
+	# 2. Фаза 2: Резкий рывок на ноги от воя сирен (Y=1.55м, камера выравнивается в горизонт)
 	var tw_up = create_tween().set_parallel(true)
-	tw_up.tween_property(head_pivot, "position:y", 1.55, 0.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw_up.tween_property(head_pivot, "rotation:x", 0.0, 0.6).set_trans(Tween.TRANS_CUBIC)
-	tw_up.tween_property(head_pivot, "rotation:z", 0.0, 0.6).set_trans(Tween.TRANS_SINE)
+	tw_up.tween_property(head_pivot, "position:y", 1.55, 0.40).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw_up.tween_property(head_pivot, "rotation:x", 0.0, 0.40).set_trans(Tween.TRANS_CUBIC)
+	tw_up.tween_property(head_pivot, "rotation:z", 0.0, 0.40).set_trans(Tween.TRANS_SINE)
 	await tw_up.finished
 
-	# 2. Испуганный быстрый поворот головы назад (на 160 градусов назад, к преследователям)
-	var tw_look_back = create_tween()
-	tw_look_back.tween_property(head_pivot, "rotation:y", deg_to_rad(160), 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# 3. Фаза 3: В панике оглядывается через левое плечо назад (на 145 градусов назад, к преследователям)
+	var tw_look_back = create_tween().set_parallel(true)
+	tw_look_back.tween_property(head_pivot, "rotation:y", deg_to_rad(145), 0.40).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw_look_back.tween_property(head_pivot, "rotation:z", deg_to_rad(-8), 0.40).set_trans(Tween.TRANS_SINE)
 	await tw_look_back.finished
-	await get_tree().create_timer(0.35).timeout
+	await get_tree().create_timer(0.25).timeout
 
-	# 3. Резкий разворот взгляда вперед по коридору (куда бежать)
-	var tw_look_fwd = create_tween()
-	tw_look_fwd.tween_property(head_pivot, "rotation:y", 0.0, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# 4. Фаза 4: В ужасе разворачивается вперед и уже делает первые шаги вперед
+	var tw_look_fwd = create_tween().set_parallel(true)
+	tw_look_fwd.tween_property(head_pivot, "rotation:y", 0.0, 0.30).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw_look_fwd.tween_property(head_pivot, "rotation:z", 0.0, 0.30).set_trans(Tween.TRANS_SINE)
 	await tw_look_fwd.finished
 
-	# 4. Начало бега: человек уже разгоняется вперед
 	head_pivot.position = Vector3(0, 1.55, 0)
 	head_pivot.rotation = Vector3.ZERO
 	camera_pitch = 0.0
 	target_pitch = 0.0
 	current_pitch = 0.0
+	cur_head_pivot_pos = Vector3(0, 1.55, 0)
 
 	if neck_bone_idx != -1 and char_skeleton:
 		var neck_bone_g = char_skeleton.get_bone_global_pose(neck_bone_idx)
 		var local_neck_pos = visual_root.transform * model_slot.transform * char_skeleton.transform * neck_bone_g.origin
 		head_pivot.position = Vector3(0, local_neck_pos.y + 0.12, local_neck_pos.z - 0.12)
+		cur_head_pivot_pos = head_pivot.position
 		if head_shadow_mesh:
 			head_shadow_mesh.position = Vector3(local_neck_pos.x, local_neck_pos.y + 0.11, local_neck_pos.z - 0.02)
 

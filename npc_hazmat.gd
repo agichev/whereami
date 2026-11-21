@@ -51,7 +51,7 @@ var feeler_angles = [0.0, deg_to_rad(28.0), deg_to_rad(-28.0), deg_to_rad(55.0),
 
 # Система умной сетки поиска путей AStar
 var astar = AStar2D.new()
-var astar_path: Array[Vector2] = []
+var astar_path: PackedVector2Array = PackedVector2Array()
 var astar_timer: float = 0.0
 var current_path_index: int = 0
 
@@ -352,6 +352,17 @@ func _physics_process(dt: float):
 		play_anim("Idle")
 
 	move_and_slide()
+
+# Немедленный переход в режим ярости / агрессивной погони (для Level Run !)
+func trigger_aggro_chase():
+	is_mutated = true
+	is_screaming = false
+	is_following = true
+	chase_duration = 0.0
+	if hazmat_material:
+		hazmat_material.albedo_color = Color(0.04, 0.04, 0.04, 1.0)
+	if visual_root:
+		visual_root.scale.y = 1.5
 
 # Срабатывание отключения света и крика Bacteria
 func trigger_bacteria_scream():
