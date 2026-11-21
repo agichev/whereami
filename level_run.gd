@@ -30,7 +30,7 @@ var pack_smiler: CharacterBody3D = null
 var alarm1_player: AudioStreamPlayer = null
 var alarm2_player: AudioStreamPlayer = null
 
-# Дыхательный ивент передышки (вдох-выдох, успокоение, ослабление красного, сердцебиение)
+# Дыхательный ивент передышки (вдох-выдох, успокоение, ослабление красного, сердцебиение, звон)
 var event_breath_player: AudioStreamPlayer = null
 var event_mouth_breath_player: AudioStreamPlayer = null
 var event_heartbeat_player: AudioStreamPlayer = null
@@ -42,11 +42,12 @@ var event_phase: int = 0
 var red_relief_factor: float = 0.0 # 0.0 = полный красный кошмар, 1.0 = ослабленный спокойный свет
 # Фазы:
 # 0 = Idle / Ожидание
-# 1 = Заглушение окружения и монстров (1.5с), плавное ослабление красного, старт глубокого вдоха-выдоха
-# 2 = Пауза 1 секунда, затем нарастание сердцебиения (2с) и запуск постоянного дыхания ртом, шаги стихают
-# 3 = Сердцебиение и дыхание ртом (10с). За 2 секунды до конца фазы начинается звон в ушах
-# 4 = Сердцебиение затухает, шаги возвращаются (2с), звон в ушах звенит в полный рост
-# 5 = Плавное возвращение тревоги, сирен, криков монстров и красного освещения в норму (5с), звон плавно затухает до конца фазы
+# 1 = Заглушение окружения и монстров (1.5с), ослабление красного, воспроизводится весь первый глубокий вдох-выдох (~5 сек)
+# 2 = 1.0 секунда чистой тишины / паузы ПОСЛЕ окончания первого выдоха
+# 3 = Включается второе дыхание ртом (mouth-breathing) и сердцебиение (10с), звуки монстров и сирен заглушены, шаги затихают
+# 4 = Сердцебиение затухает, шаги возвращаются (2с), дыхание ртом продолжает звучать
+# 5 = Возвращение цветов и звуков (5с). Ровно В НАЧАЛЕ этой фазы включается громкий звон в ушах, звучит и постепенно стихает только когда всё уже вернулось (красное и звуки на максимуме)
+# 6 = Завершающий хвост звона (1.5с): свет уже полностью красный, звуки орды и сирен орут на 100%, звон в ушах окончательно стихает
 
 # Дверь выхода в конце коридора
 var exit_door: InteractiveDoor = null
@@ -729,9 +730,9 @@ func _process_breathing_event(delta: float):
 
 	match event_phase:
 		1:
-			# Фаза 1: Все звуки сирен и монстров плавно заглушаются в тишину (-60 dB) за 1.5 секунды
-			# Звучит глубокий мужской вдох-выдох (моральная передышка)
+			# Фаза 1: За первые 1.5 секунды звуки сирен и монстров плавно заглушаются в тишину (-60 dB)
 			# Красный свет плавно ослабляется и разбавляется мягким нейтральным светом
+			# Звучит ВЕСЬ глубокий мужской вдох-выдох (длительность аудио 5.05 сек)
 			var t = clamp(event_phase_timer / 1.5, 0.0, 1.0)
 			red_relief_factor = t
 
@@ -742,67 +743,48 @@ func _process_breathing_event(delta: float):
 			_set_horde_volume_attenuation(lerp(0.0, -60.0, t))
 			_apply_red_relief_effect(red_relief_factor)
 
-			if event_phase_timer >= 2.0:
+			# Ждем полного окончания первого аудио вдоха-выдоха (5.1 сек)
+			if event_phase_timer >= 5.1:
 				event_phase = 2
 				event_phase_timer = 0.0
 				red_relief_factor = 1.0
 				_apply_red_relief_effect(1.0)
 
 		2:
-			# Фаза 2: Сначала 1 секунда задержки в тишине после первого дыхания.
-			# Затем включается второй звук дыхания ртом (mouth-breathing) и нарастает сердцебиение (2 сек),
-			# а шаги игрока стихают.
+			# Фаза 2: Ровно 1.0 секунда чистой тишины и задержки ПОСЛЕ первого выдоха
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
 			if alarm2_player: alarm2_player.volume_db = -60.0
+			_set_player_step_volume_attenuation(0.0)
+			red_relief_factor = 1.0
+			_apply_red_relief_effect(1.0)
 
-			if event_phase_timer < 1.0:
-				# 1 секунда паузы / тишины перед вторым звуком дыхания
-				_set_player_step_volume_attenuation(0.0)
-			else:
-				var sub_t = clamp((event_phase_timer - 1.0) / 2.0, 0.0, 1.0)
-				# Включаем mouth-breathing и heartbeat, если еще не играют
-				if event_mouth_breath_player and not event_mouth_breath_player.is_playing():
-					event_mouth_breath_player.volume_db = -18.0
-					event_mouth_breath_player.play()
-				if event_heartbeat_player and not event_heartbeat_player.is_playing():
-					event_heartbeat_player.volume_db = -25.0
-					event_heartbeat_player.play()
-
-				if event_mouth_breath_player:
-					event_mouth_breath_player.volume_db = lerp(-18.0, 3.5, sub_t)
-				if event_heartbeat_player:
-					event_heartbeat_player.volume_db = lerp(-25.0, 5.0, sub_t)
-				# Шаги игрока затухают
-				_set_player_step_volume_attenuation(lerp(0.0, -45.0, sub_t))
-
-			# Общее время фазы 2: 1.0 сек задержки + 2.0 сек нарастания = 3.0 сек
-			if event_phase_timer >= 3.0:
+			if event_phase_timer >= 1.0:
+				# Секунда тишины прошла — переходим к фазе 3
 				event_phase = 3
 				event_phase_timer = 0.0
+				# Включаем второй звук дыхания ртом (mouth-breathing) и сердцебиение
+				if event_mouth_breath_player:
+					event_mouth_breath_player.volume_db = -10.0
+					event_mouth_breath_player.play()
+				if event_heartbeat_player:
+					event_heartbeat_player.volume_db = -18.0
+					event_heartbeat_player.play()
 
 		3:
-			# Фаза 3: 10 секунд длится сердцебиение и непрерывное дыхание ртом на постоянке.
-			# За 2.5 секунды до конца фазы (до возвращения цветов и звуков) начинается звон в ушах / контузия!
-			if event_heartbeat_player:
-				event_heartbeat_player.volume_db = 5.0
+			# Фаза 3: В течение первых 2.0 секунд нарастают дыхание ртом и сердцебиение, шаги затихают.
+			# Затем 8 секунд непрерывного дыхания и сердцебиения (всего 10 секунд).
+			var t_ramp = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_mouth_breath_player:
-				event_mouth_breath_player.volume_db = 3.5
-			_set_player_step_volume_attenuation(-45.0)
+				event_mouth_breath_player.volume_db = lerp(-10.0, 3.5, t_ramp)
+			if event_heartbeat_player:
+				event_heartbeat_player.volume_db = lerp(-18.0, 5.0, t_ramp)
+			_set_player_step_volume_attenuation(lerp(0.0, -45.0, t_ramp))
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
 			if alarm2_player: alarm2_player.volume_db = -60.0
 			red_relief_factor = 1.0
 			_apply_red_relief_effect(1.0)
-
-			# Звон в ушах начинается заранее (с 7.5 секунды фазы 3)
-			if event_phase_timer >= 7.5:
-				var t_tin = clamp((event_phase_timer - 7.5) / 2.5, 0.0, 1.0)
-				if event_tinnitus_player and not event_tinnitus_player.is_playing():
-					event_tinnitus_player.volume_db = -30.0
-					event_tinnitus_player.play()
-				if event_tinnitus_player:
-					event_tinnitus_player.volume_db = lerp(-30.0, 2.0, t_tin)
 
 			if event_phase_timer >= 10.0:
 				event_phase = 4
@@ -810,14 +792,12 @@ func _process_breathing_event(delta: float):
 
 		4:
 			# Фаза 4: Сердцебиение затухает за 2 секунды, шаги игрока возвращаются.
-			# Звон в голове звучит громко перед началом возврата звуков и цветов.
+			# Дыхание ртом продолжает звучать. Окружение всё ещё заглушено и свет мягкий.
 			var t = clamp(event_phase_timer / 2.0, 0.0, 1.0)
 			if event_heartbeat_player:
 				event_heartbeat_player.volume_db = lerp(5.0, -80.0, t)
 			if event_mouth_breath_player:
 				event_mouth_breath_player.volume_db = 3.5
-			if event_tinnitus_player:
-				event_tinnitus_player.volume_db = 2.0
 			_set_player_step_volume_attenuation(lerp(-45.0, 0.0, t))
 			_set_horde_volume_attenuation(-60.0)
 			if alarm1_player: alarm1_player.volume_db = -60.0
@@ -828,34 +808,59 @@ func _process_breathing_event(delta: float):
 					event_heartbeat_player.stop()
 				event_phase = 5
 				event_phase_timer = 0.0
+				# РОV: прямо сейчас всё начинает краснеть и проявляются звуки!
+				# В этот самый момент стартует громкий звон в ушах!
+				if event_tinnitus_player:
+					event_tinnitus_player.volume_db = 4.0
+					event_tinnitus_player.play()
 
 		5:
-			# Фаза 5: В течение 5 секунд всё плавно возвращается в норму.
-			# Звон в голове и дыхание ртом плавно затухают, пока звуки монстров, сирены и красный свет не вернутся полностью!
+			# Фаза 5: В течение 5 секунд всё плавно возвращается:
+			# Красный цвет нарастает до максимума, сирены и крики монстров возвращаются на полную мощь.
+			# Звон в ушах звучит на протяжении всего этого времени!
 			var t = clamp(event_phase_timer / 5.0, 0.0, 1.0)
 			red_relief_factor = 1.0 - t
 			_apply_red_relief_effect(red_relief_factor)
 
 			if event_mouth_breath_player:
 				event_mouth_breath_player.volume_db = lerp(3.5, -60.0, t)
+			# Звон в ушах уверенно звучит всю фазу возврата
 			if event_tinnitus_player:
-				event_tinnitus_player.volume_db = lerp(2.0, -60.0, t)
+				event_tinnitus_player.volume_db = 4.0
 			if alarm1_player: alarm1_player.volume_db = lerp(-60.0, 2.0, t)
 			if alarm2_player: alarm2_player.volume_db = lerp(-60.0, -1.0, t)
 			_set_horde_volume_attenuation(lerp(-60.0, 0.0, t))
 			_set_player_step_volume_attenuation(0.0)
 
 			if event_phase_timer >= 5.0:
-				# Завершение ивента, звуки и цвета полностью вернулись
+				# Цвета уже полностью красные, сирены и монстры уже орут на максимуме!
 				if event_mouth_breath_player:
 					event_mouth_breath_player.stop()
+				# Переходим к фазе 6: затухание звона, когда уже ВСЁ красное и орёт
+				event_phase = 6
+				event_phase_timer = 0.0
+
+		6:
+			# Фаза 6 (1.5 сек): Всё уже полностью красное и орёт на 100%.
+			# Звон в ушах плавно затихает и заканчивается.
+			red_relief_factor = 0.0
+			_apply_red_relief_effect(0.0)
+			if alarm1_player: alarm1_player.volume_db = 2.0
+			if alarm2_player: alarm2_player.volume_db = -1.0
+			_set_horde_volume_attenuation(0.0)
+			_set_player_step_volume_attenuation(0.0)
+
+			var t_tin = clamp(event_phase_timer / 1.5, 0.0, 1.0)
+			if event_tinnitus_player:
+				event_tinnitus_player.volume_db = lerp(4.0, -70.0, t_tin)
+
+			if event_phase_timer >= 1.5:
 				if event_tinnitus_player:
 					event_tinnitus_player.stop()
+				# Завершение ивента, сброс к норме
 				is_breathing_event_active = false
 				event_phase = 0
 				event_phase_timer = 0.0
-				red_relief_factor = 0.0
-				_apply_red_relief_effect(0.0)
 				# Следующий запуск передышки (пока для тестов: через 12-20 секунд)
 				event_cooldown_timer = randf_range(12.0, 20.0)
 
