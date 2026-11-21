@@ -36,6 +36,7 @@ var is_completed: bool = false
 var original_world_env: Environment = null
 var run_world_env: Environment = null
 var world_env_node: WorldEnvironment = null
+var horde_darkness_wall: MeshInstance3D = null
 
 signal player_reached_exit
 
@@ -118,6 +119,26 @@ func start_level(target_player: CharacterBody3D):
 	# Финишный тупик на отметке -5000м с открытой дверью выхода
 	_build_exit_barrier()
 
+	# Создаем поглощающую стену тьмы строго позади орды монстров
+	_build_horde_darkness_wall()
+
+func _build_horde_darkness_wall():
+	horde_darkness_wall = MeshInstance3D.new()
+	horde_darkness_wall.name = "HordeDarknessWall"
+	var q_mesh = QuadMesh.new()
+	q_mesh.size = Vector2(CORRIDOR_WIDTH + 1.0, CORRIDOR_HEIGHT + 1.0)
+	horde_darkness_wall.mesh = q_mesh
+
+	var d_mat = StandardMaterial3D.new()
+	d_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	d_mat.albedo_color = Color(0.005, 0.001, 0.001, 1.0) # Абсолютная черная бездна
+	d_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	horde_darkness_wall.material_override = d_mat
+
+	# Начальное положение: на 4 метра позади самого дальнего монстра (Hazmat)
+	horde_darkness_wall.position = Vector3(0.0, CORRIDOR_HEIGHT * 0.5, 28.0)
+	add_child(horde_darkness_wall)
+
 func _setup_level_run_environment():
 	world_env_node = get_tree().root.find_child("WorldEnvironment", true, false)
 	if world_env_node and world_env_node.environment:
@@ -131,17 +152,17 @@ func _setup_level_run_environment():
 		run_world_env.ambient_light_color = Color(0.02, 0.002, 0.002, 1.0) # Почти 0 амбиента! Только свет от табличек EXIT
 		run_world_env.ambient_light_energy = 0.15
 		
-		# Кинематографичный Blood Red Fog
+		# Кинематографичный Blood Red Fog (густой алый туман вдалеке впереди)
 		run_world_env.fog_enabled = true
-		run_world_env.fog_light_color = Color(0.45, 0.01, 0.01, 1.0) # Глубокий бордово-красный туман вдали
-		run_world_env.fog_light_energy = 0.8
-		run_world_env.fog_density = 0.018 # Красивая дымка вдалеке коридора
+		run_world_env.fog_light_color = Color(0.85, 0.02, 0.02, 1.0) # Насыщенный ярко-кровавый свет впереди
+		run_world_env.fog_light_energy = 1.35
+		run_world_env.fog_density = 0.028 # При вглядывании вдаль коридор уходит в густую кровавую красноту
 		
 		# Мощный реалистичный Bloom / Glow для знаков EXIT
 		run_world_env.glow_enabled = true
-		run_world_env.glow_intensity = 0.85
-		run_world_env.glow_bloom = 0.55
-		run_world_env.glow_hdr_threshold = 0.65
+		run_world_env.glow_intensity = 1.1
+		run_world_env.glow_bloom = 0.65
+		run_world_env.glow_hdr_threshold = 0.60
 		run_world_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 		
 		# Тональный маппинг ACES / Filmic для кинематографичного контраста
@@ -506,6 +527,8 @@ func _process_horde(delta: float, player_z: float):
 			pack_bacteria.global_position = Vector3(-0.7, 0.0, player_z + 21.0)
 		if pack_hazmat and is_instance_valid(pack_hazmat):
 			pack_hazmat.global_position = Vector3(0.7, 0.0, player_z + 23.5)
+		if horde_darkness_wall and is_instance_valid(horde_darkness_wall):
+			horde_darkness_wall.position.z = player_z + 28.0
 		return
 
 	# Логика орды:
@@ -622,3 +645,12 @@ func _process_horde(delta: float, player_z: float):
 		if pack_hazmat.global_position.distance_to(player.global_position) < 1.4:
 			_kill_player_by_horde()
 			return
+
+	# Позиция поглощающей стены черноты: следует строго позади орды монстров на дистанции 4-5 метров
+	if horde_darkness_wall and is_instance_valid(horde_darkness_wall):
+		var furthest_monster_z = player_z + 24.0
+		if pack_hazmat and is_instance_valid(pack_hazmat):
+			furthest_monster_z = max(furthest_monster_z, pack_hazmat.global_position.z)
+		if pack_bacteria and is_instance_valid(pack_bacteria):
+			furthest_monster_z = max(furthest_monster_z, pack_bacteria.global_position.z)
+		horde_darkness_wall.position.z = furthest_monster_z + 4.5
