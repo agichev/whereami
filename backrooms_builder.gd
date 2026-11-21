@@ -1569,16 +1569,17 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	# Детерминированный хэш для блока
 	var block_seed = get_hash(int(px * 10), int(pz * 10), 9192 + r * 17 + c1)
 	
-	# Для тестов: шанс спавна рисунка увеличен (1 на 3 блока), дистанция уменьшена до 10м
-	if (block_seed % 3) != 0:
+	# Шанс для блока: 1 на 10 блоков (в сочетании с радиусом 40м гарантирует атмосферную редкость)
+	if (block_seed % 10) != 0:
 		return
 	if vert_drawings.is_empty() and horiz_drawings.is_empty():
 		return
 
-	# Дистанционный фильтр: для тестов снижен с 40м до 10м
+	# Дистанционный фильтр: максимум один рисунок на 40 метров
+	# Если ближе 40 метров уже есть любой рисунок — не спавним
 	var cur_pos_2d = Vector2(px, pz)
 	for prev_pos in spawned_decal_positions:
-		if cur_pos_2d.distance_to(prev_pos) < 10.0:
+		if cur_pos_2d.distance_to(prev_pos) < 40.0:
 			return
 
 	# Случайная грань блока:
@@ -1654,8 +1655,9 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	parent.add_child(quad)
 	spawned_decal_positions.append(cur_pos_2d)
 
-	# На время тестов: любой рисунок (не только EXIT) наделяется зоной телепортации на Уровень !
-	_setup_exit_drawing_interaction(parent, quad)
+	# Телепортирует ТОЛЬКО рисунок двери с надписью Exit (user_drawing_vert_5, vert_drawings[4])
+	if tex == vert_drawings[4]:
+		_setup_exit_drawing_interaction(parent, quad)
 
 func _setup_exit_drawing_interaction(parent: Node3D, quad: MeshInstance3D):
 	var area = Area3D.new()
