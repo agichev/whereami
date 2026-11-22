@@ -728,11 +728,11 @@ func _check_cheat_codes():
 		_cheat_spawn_door_on_wall()
 		return
 
-	# Читкод "exit" - спавнит рисунок EXIT (user_drawing_vert_5) на стене перед игроком
+	# Читкод "exit" - телепорт на Уровень "!" (Level Run)
 	if cheat_buffer.ends_with("exit"):
 		cheat_buffer = ""
-		print("[CHEAT] Spawn EXIT drawing on Looked Wall (exit)")
-		_cheat_spawn_exit_drawing_on_wall()
+		print("[CHEAT] Go to Level ! via exit")
+		_transition_to_level_run()
 		return
 
 	# Читкод "ghi" (или "sml") - вызывает отключение света (на Уровне 1 запускает блэкаут со Смайлерами, на Уровне 0 — блэкаут комнат, на Уровне -44 — блэкаут с оповещением)
@@ -850,7 +850,7 @@ func _cheat_spawn_exit_drawing_on_wall():
 		hit_pos = player.global_position + flat_forward * 2.4
 		print("[CHEAT EXIT] No wall hit in raycast, spawning floating billboard directly in front of player")
 
-	# Создаем QuadMesh с рисунком EXIT (vert_drawings[4])
+	# Создаем QuadMesh с рисунком EXIT (vert_drawings[0])
 	var quad = MeshInstance3D.new()
 	quad.name = "CheatExitDrawing"
 	var p_mesh = QuadMesh.new()
@@ -858,7 +858,7 @@ func _cheat_spawn_exit_drawing_on_wall():
 	quad.mesh = p_mesh
 
 	var mat = StandardMaterial3D.new()
-	mat.albedo_texture = vert_drawings[4]
+	mat.albedo_texture = vert_drawings[0]
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	mat.roughness = 0.95
@@ -1655,8 +1655,8 @@ func maybe_spawn_decal_on_block(parent: Node3D, px: float, pz: float, sx: float,
 	parent.add_child(quad)
 	spawned_decal_positions.append(cur_pos_2d)
 
-	# Телепортирует ТОЛЬКО рисунок двери с надписью Exit (user_drawing_vert_5, vert_drawings[4])
-	if tex == vert_drawings[4]:
+	# Телепортирует ТОЛЬКО рисунок двери с надписью Exit (user_drawing_vert_1, vert_drawings[0])
+	if tex == vert_drawings[0]:
 		_setup_exit_drawing_interaction(parent, quad)
 
 func _setup_exit_drawing_interaction(parent: Node3D, quad: MeshInstance3D):
