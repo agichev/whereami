@@ -47,6 +47,7 @@ var current_fov: float = 70.0
 const MIN_FOV: float = 24.0 # Максимальное приближение
 const MAX_FOV: float = 70.0 # Стандартный обзор
 var focus_blur_amount: float = 0.0
+var infection_blur_amount: float = 0.0 # Замутнение зрения перед падением от инфекции
 var is_zoomed: bool = false
 var zoom_sound_timer: float = 0.0
 
@@ -61,6 +62,7 @@ var prev_camera_pitch: float = 0.0
 var head_shadow_mesh: MeshInstance3D = null
 var is_active: bool = true
 var is_in_cutscene: bool = false
+var is_infected_by_partygoer: bool = false # Заражение тусовщиком при касании
 var getup_audio_stream = preload("res://audio/player_getup.mp3")
 var pause_menu_scene = preload("res://pause_menu.tscn")
 
@@ -503,7 +505,8 @@ func _process(dt: float):
 		var vhs_node = get_tree().root.find_child("VHSOverlay", true, false)
 		if vhs_node and vhs_node.material is ShaderMaterial:
 			vhs_node.material.set_shader_parameter("motion_blur_dir", mouse_angular_speed)
-			vhs_node.material.set_shader_parameter("focus_blur", focus_blur_amount)
+			var total_blur = maxf(focus_blur_amount, infection_blur_amount)
+			vhs_node.material.set_shader_parameter("focus_blur", total_blur)
 
 		# 6. Реалистичная работа фонарика: инерция луча, разогрев лампы, дрожь рук
 		_update_flashlight(dt, yaw_vel, pitch_vel)
@@ -773,6 +776,221 @@ func play_level_run_intro_cutscene():
 	is_active = true
 	enable_infinite_stamina_only()
 	is_in_danger_chase = true
+
+# Запуск инфекции при касании Тусовщика:
+# Игрок может свободно бегать и ходить еще от 15 до 40 секунд!
+# При этом сразу начинает нарастать учащенный стук сердца, а затем к нему плавно подключается звон в ушах.
+# По истечении времени персонаж падает от первого лица и начинается финальная трансформация.
+func start_partygoer_infection():
+	if is_infected_by_partygoer or is_in_cutscene:
+		return
+	is_infected_by_partygoer = true
+
+	var infection_delay = randf_range(15.0, 40.0) # От 15 до 40 секунд свободного передвижения
+	print("[PARTYGOER INFECTION] Started! Delay until collapse: %.1f sec" % infection_delay)
+
+	# 1. Сердцебиение: запускается СРАЗУ же в момент касания
+	# и непрерывно нарастает от едва слышного до оглушительного
+	var hb_player = AudioStreamPlayer.new()
+	hb_player.name = "PartygoerInfectionHeartbeat"
+	var hb_res = load("res://audio/heartbeat.mp3")
+	hb_player.stream = hb_res
+	hb_player.volume_db = -24.0
+	add_child(hb_player)
+	# Гарантируем бесшовный непрерывный повтор
+	hb_player.finished.connect(func():
+		if is_instance_valid(hb_player) and not is_in_cutscene:
+			hb_player.play()
+	)
+	hb_player.play()
+
+	var tw_hb = create_tween()
+	tw_hb.tween_property(hb_player, "volume_db", 6.0, infection_delay).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+
+	# 2. Звон в ушах: нарастает вместе с сердцебиением ближе к развязке (в последние ~70% времени)
+	var zvon_player = AudioStreamPlayer.new()
+	zvon_player.name = "PartygoerInfectionRinging"
+	var zvon_res = load("res://audio/zvon_v_ushah.mp3")
+	zvon_player.stream = zvon_res
+	zvon_player.volume_db = -80.0
+	add_child(zvon_player)
+	zvon_player.finished.connect(func():
+		if is_instance_valid(zvon_player) and not is_in_cutscene:
+			zvon_player.play()
+	)
+
+	var ringing_start_delay = max(0.0, infection_delay * 0.3)
+	var ringing_duration = infection_delay - ringing_start_delay
+	var tw_zvon = create_tween()
+	tw_zvon.tween_interval(ringing_start_delay)
+	tw_zvon.tween_callback(func():
+		if is_instance_valid(zvon_player) and not is_in_cutscene:
+			zvon_player.volume_db = -38.0
+			zvon_player.play()
+	)
+	tw_zvon.tween_property(zvon_player, "volume_db", 8.0, ringing_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+	# 3. Плавное замутнение зрения примерно за 7 секунд до падения
+	var blur_start_delay = max(0.0, infection_delay - 7.0)
+	var blur_duration = infection_delay - blur_start_delay
+	var tw_blur = create_tween()
+	tw_blur.tween_interval(blur_start_delay)
+	tw_blur.tween_property(self, "infection_blur_amount", 1.0, blur_duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+
+	# Таймер до обморока и трансформации
+	get_tree().create_timer(infection_delay).timeout.connect(func():
+		if is_instance_valid(self):
+			play_partygoer_transformation_cutscene(hb_player, zvon_player)
+	)
+
+# Катсцена гибели и превращения в Тусовщика на Уровне Fun:
+# 1. Падение на пол от первого лица (звуки затихают)
+# 2. Подъем на ноги, камера смотрит вперед, затем опускается вниз на свое тело:
+#    игрок видит, что сам стал Тусовщиком!
+# 3. Камера плавно отлетает и показывает персонажа в теле Тусовщика со стороны
+# 4. Экран уходит в темноту и игра выходит в главное меню
+func play_partygoer_transformation_cutscene(hb_player: AudioStreamPlayer = null, zvon_player: AudioStreamPlayer = null):
+	if is_in_cutscene:
+		return
+	is_in_cutscene = true
+	is_active = false
+	velocity = Vector3.ZERO
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# Полностью глушим анимации и сгибы скелета старого игрока
+	if anim_player and is_instance_valid(anim_player):
+		anim_player.stop()
+
+	# Отключаем фонарик
+	if flashlight_light:
+		flashlight_light.visible = false
+
+	# 1. Персонаж плавно падает на землю от первого лица
+	var fall_tw = create_tween().set_parallel(true)
+	fall_tw.tween_property(head_pivot, "position:y", 0.16, 1.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	fall_tw.tween_property(head_pivot, "rotation:x", deg_to_rad(-70), 1.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	fall_tw.tween_property(head_pivot, "rotation:z", deg_to_rad(25), 1.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+
+	# Глухой стук падения тела на ковер
+	var thud_player = AudioStreamPlayer.new()
+	var bodyfall_stream = load("res://audio/bodyfall.mp3") if ResourceLoader.exists("res://audio/bodyfall.mp3") else load("res://audio/heartbeat.mp3")
+	thud_player.stream = bodyfall_stream
+	thud_player.volume_db = 2.0
+	add_child(thud_player)
+	thud_player.play()
+
+	await fall_tw.finished
+
+	# Сбрасываем размытие инфекции при падении
+	infection_blur_amount = 0.0
+
+	# Звуки сердцебиения и звона полностью затихают
+	var tw_mute = create_tween().set_parallel(true)
+	if hb_player and is_instance_valid(hb_player):
+		tw_mute.tween_property(hb_player, "volume_db", -80.0, 1.0)
+	if zvon_player and is_instance_valid(zvon_player):
+		tw_mute.tween_property(zvon_player, "volume_db", -80.0, 1.0)
+	tw_mute.finished.connect(func():
+		if is_instance_valid(hb_player): hb_player.queue_free()
+		if is_instance_valid(zvon_player): zvon_player.queue_free()
+	)
+
+	# Краткое затемнение в глазах (потеря сознания)
+	var vhs_mat: ShaderMaterial = null
+	var vhs_node = get_tree().root.find_child("VHSOverlay", true, false)
+	if vhs_node and vhs_node.material is ShaderMaterial:
+		vhs_mat = vhs_node.material
+		vhs_mat.set_shader_parameter("focus_blur", 0.0)
+		vhs_mat.set_shader_parameter("black_fade", 0.9)
+
+	# Полностью скрываем оригинальный visual_root игрока (костюм химзащиты, ноги, руки),
+	# чтобы они не торчали и не глитчили во время трансформации
+	visual_root.visible = false
+	if head_shadow_mesh:
+		head_shadow_mesh.visible = false
+	if mannequin_mesh and is_instance_valid(mannequin_mesh):
+		mannequin_mesh.visible = false
+
+	await get_tree().create_timer(1.4).timeout
+
+	# Глаза снова открываются
+	if vhs_mat:
+		var fade_in = create_tween()
+		fade_in.tween_method(func(v: float): vhs_mat.set_shader_parameter("black_fade", v), 0.9, 0.0, 1.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+	# 2. Игрок плавно встает на ноги в полный рост и смотрит прямо вперед
+	# Используем мягкую кривую EASE_IN_OUT, чтобы не было дерганий
+	var tw_rise = create_tween().set_parallel(true)
+	tw_rise.tween_property(head_pivot, "position:y", 1.70, 2.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw_rise.tween_property(head_pivot, "rotation:x", 0.0, 2.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw_rise.tween_property(head_pivot, "rotation:z", 0.0, 2.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await tw_rise.finished
+
+	await get_tree().create_timer(0.6).timeout
+
+	# Спавним полноразмерного Тусовщика на месте персонажа (без звука песни)
+	var partygoer_slot = Node3D.new()
+	partygoer_slot.name = "TransformedPartygoerSlot"
+	add_child(partygoer_slot)
+	var partygoer_scene = load("res://level_fun_assets/partygoer/source/unzipped/scene.gltf")
+	if partygoer_scene:
+		var partygoer_inst = partygoer_scene.instantiate()
+		partygoer_slot.add_child(partygoer_inst)
+		partygoer_inst.scale = Vector3(23.5, 23.5, 23.5)
+		partygoer_inst.position = Vector3(0.0, 0.86, 0.0)
+		var mesh_inst = partygoer_inst.find_child("Object_2", true, false) as MeshInstance3D
+		if mesh_inst:
+			var mat = StandardMaterial3D.new()
+			mat.albedo_texture = load("res://level_fun_assets/partygoer/source/unzipped/textures/PartygoerMaterial_baseColor.png")
+			mat.normal_enabled = true
+			mat.normal_texture = load("res://level_fun_assets/partygoer/source/unzipped/textures/PartygoerMaterial_normal.png")
+			mesh_inst.material_override = mat
+
+	# Игрок плавно опускает взгляд вниз на свое тело Тусовщика:
+	# Чтобы видеть фигуру и желтый торс с руками целиком, а не находиться внутри меша,
+	# голова/камера естественно наклоняется и выдвигается немного вперед-вниз
+	var tw_look_down = create_tween().set_parallel(true)
+	tw_look_down.tween_property(head_pivot, "position:y", 1.85, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw_look_down.tween_property(head_pivot, "position:z", -0.48, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw_look_down.tween_property(head_pivot, "rotation:x", deg_to_rad(-65), 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw_look_down.tween_property(head_pivot, "rotation:z", deg_to_rad(3), 2.2).set_trans(Tween.TRANS_SINE)
+	await tw_look_down.finished
+
+	# Осознание нового тела (игрок видит перед собой свое желтое тело и руки тусовщика)
+	await get_tree().create_timer(2.4).timeout
+
+	# 3. Камера плавно переключается и отлетает, показывая персонажа в теле Тусовщика СО СТОРОНЫ
+	# Создаем кинематографическую обзорную камеру от третьего лица
+	var third_person_cam = Camera3D.new()
+	third_person_cam.name = "ThirdPersonPartygoerCam"
+	third_person_cam.fov = 68.0
+	add_child(third_person_cam)
+	
+	# Начальная позиция третьей камеры: чуть спереди-сбоку, смотря на Тусовщика
+	var view_offset = (global_transform.basis.z * 2.6 + global_transform.basis.x * 1.3 + Vector3.UP * 1.5)
+	third_person_cam.global_position = global_position + view_offset
+	third_person_cam.look_at(global_position + Vector3(0.0, 1.25, 0.0), Vector3.UP)
+	third_person_cam.make_current()
+
+	# Плавный кинематографический наплыв камеры от третьего лица
+	var tw_cam_pan = create_tween()
+	var end_cam_pos = global_position + (global_transform.basis.z * 3.8 + global_transform.basis.x * 0.4 + Vector3.UP * 1.7)
+	tw_cam_pan.tween_property(third_person_cam, "global_position", end_cam_pos, 3.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	await get_tree().create_timer(3.0).timeout
+
+	# 4. Финальное затемнение и выход в главное меню
+	if vhs_mat:
+		var final_fade = create_tween()
+		final_fade.tween_method(func(v: float): vhs_mat.set_shader_parameter("black_fade", v), 0.0, 1.0, 1.6).set_trans(Tween.TRANS_SINE)
+		await final_fade.finished
+	else:
+		await get_tree().create_timer(1.6).timeout
+
+	# Выход в главное меню (перезагрузка сцены с открытием Start Menu)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().reload_current_scene()
+	get_tree().reload_current_scene()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _physics_process(dt: float):

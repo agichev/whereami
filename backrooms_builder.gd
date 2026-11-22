@@ -97,6 +97,10 @@ var level_run_generator: Node3D = null
 var exit_drawing_touch_count: int = 0 # Счетчик касаний рисунка с надписью EXIT (2 касания = переход на Level !)
 var last_exit_touch_time: float = -999.0
 
+# Уровень "Fun" (Веселье)
+var level_fun_script = preload("res://level_fun.gd")
+var level_fun_generator: Node3D = null
+
 # Ассеты Уровня 1 (Level 1: Habitable Zone - Бетонный склад/парковка с лужами и мерцающими лампами):
 var level1_pillar_model = preload("res://level1_assets/GLB/MOD_21_Pillar_Square.glb")
 var level1_lamp_model = preload("res://level1_assets/GLB/PROP_01_FluorescentFixture.glb")
@@ -629,10 +633,10 @@ func _process(delta):
 		var chunk_z = int(floor(pz / CHUNK_SIZE))
 		var p_chunk = Vector2i(chunk_x, chunk_z)
 
-		# На Уровне -44 и Уровне 99 (!) своя независимая генерация:
+		# На Уровне -44, Уровне 99 (!) и Уровне 52 (Fun) своя независимая генерация:
 		# стриминг чанков других уровней (0, 1, 89) строго отключается,
-		# иначе поверх Уровня ! или бетонного комплекса спавнятся желтые стены и комнаты Уровня 0!
-		if p_chunk != current_player_chunk and current_level != -44 and current_level != 99:
+		# иначе поверх них спавнятся чанки базового билдера!
+		if p_chunk != current_player_chunk and current_level != -44 and current_level != 99 and current_level != 52:
 			current_player_chunk = p_chunk
 			update_chunks_around_player()
 
@@ -735,6 +739,13 @@ func _check_cheat_codes():
 		_transition_to_level_run()
 		return
 
+	# Читкод "fun" - телепорт на Уровень Fun (Веселье)
+	if cheat_buffer.ends_with("fun"):
+		cheat_buffer = ""
+		print("[CHEAT] Go to Level Fun")
+		_transition_to_level_fun()
+		return
+
 	# Читкод "ghi" (или "sml") - вызывает отключение света (на Уровне 1 запускает блэкаут со Смайлерами, на Уровне 0 — блэкаут комнат, на Уровне -44 — блэкаут с оповещением)
 	if cheat_buffer.ends_with("ghi") or cheat_buffer.ends_with("sml"):
 		cheat_buffer = ""
@@ -746,6 +757,9 @@ func _check_cheat_codes():
 		elif current_level == -44:
 			if level44_generator and is_instance_valid(level44_generator) and level44_generator.has_method("trigger_blackout_event"):
 				level44_generator.trigger_blackout_event()
+		elif current_level == 52:
+			if level_fun_generator and is_instance_valid(level_fun_generator) and level_fun_generator.has_method("trigger_blackout_event"):
+				level_fun_generator.trigger_blackout_event()
 		return
 
 	if current_level == 0:
@@ -1233,7 +1247,7 @@ func _on_settings_changed():
 			update_chunks_around_player()
 
 func update_chunks_around_player():
-	if current_level == -44 or current_level == 99:
+	if current_level == -44 or current_level == 99 or current_level == 52:
 		return
 	var target_chunks = {}
 	var cx0 = current_player_chunk.x
@@ -2139,6 +2153,7 @@ func _transition_to_level_0():
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
 	_teardown_level_run()
+	_teardown_level_fun()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2295,6 +2310,7 @@ func _transition_to_level_1():
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
 	_teardown_level_run()
+	_teardown_level_fun()
 
 	# Замораживаем игрока на время перехода
 	if player:
@@ -2433,6 +2449,7 @@ func _transition_to_level_89():
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
 	_teardown_level_run()
+	_teardown_level_fun()
 
 	# Замораживаем игрока на время видео
 	if player:
@@ -2768,6 +2785,7 @@ func _transition_to_level_run():
 	has_escaped_monster_once = false
 	_teardown_level_minus44()
 	_teardown_level_run()
+	_teardown_level_fun()
 	_teardown_level_run()
 
 	# Замораживаем игрока на время перехода
@@ -2888,6 +2906,132 @@ func _setup_level_run():
 
 	if player and player.has_method("play_level_run_intro_cutscene"):
 		player.play_level_run_intro_cutscene()
+
+# Полная уборка Уровня Fun (Веселье)
+func _teardown_level_fun():
+	if level_fun_generator and is_instance_valid(level_fun_generator):
+		level_fun_generator.queue_free()
+	level_fun_generator = null
+
+# Переход на Уровень Fun (Веселье)
+func _transition_to_level_fun():
+	if is_transitioning:
+		return
+	is_transitioning = true
+	current_level = 52 # 52 = Level Fun (Level =)
+	has_escaped_monster_once = false
+	_teardown_level_minus44()
+	_teardown_level_run()
+	_teardown_level_fun()
+
+	# Замораживаем игрока на время перехода
+	if player:
+		player.is_active = false
+		player.velocity = Vector3.ZERO
+		if player.visual_root:
+			player.visual_root.visible = false
+		if player.head_shadow_mesh:
+			player.head_shadow_mesh.visible = false
+
+	# Удаляем NPC/монстров предыдущего уровня
+	if spawned_npc and is_instance_valid(spawned_npc):
+		spawned_npc.queue_free()
+		spawned_npc = null
+	if spawned_bacteria and is_instance_valid(spawned_bacteria):
+		spawned_bacteria.queue_free()
+		spawned_bacteria = null
+	if spawned_urban_observer and is_instance_valid(spawned_urban_observer):
+		spawned_urban_observer.queue_free()
+		spawned_urban_observer = null
+	for s in spawned_smilers:
+		if is_instance_valid(s):
+			s.queue_free()
+	spawned_smilers.clear()
+
+	# Очищаем чанки предыдущего уровня
+	for c in active_chunks.keys():
+		var cn = active_chunks[c]
+		if is_instance_valid(cn):
+			cn.queue_free()
+	active_chunks.clear()
+	active_omni_lights.clear()
+	active_lamp_meshes.clear()
+	if corridors_root:
+		for ch in corridors_root.get_children():
+			ch.queue_free()
+
+	# Останавливаем звуки предыдущих уровней
+	if ambience_player:
+		ambience_player.stop()
+	if level1_audio_player and is_instance_valid(level1_audio_player):
+		level1_audio_player.stop()
+	if level89_audio_player and is_instance_valid(level89_audio_player):
+		level89_audio_player.stop()
+	if level44_audio_player and is_instance_valid(level44_audio_player):
+		level44_audio_player.stop()
+
+	# Видео-переход
+	var ui = find_child("UI", true, false)
+	if not ui:
+		_setup_level_fun()
+		return
+
+	var vp = VideoStreamPlayer.new()
+	vp.name = "NoclipTransitionPlayer"
+	vp.expand = true
+	vp.anchor_right = 1.0
+	vp.anchor_bottom = 1.0
+	vp.stream = load("res://death_jumpscare.ogv")
+	vp.volume_db = 8.0
+	vp.z_index = 100
+	ui.add_child(vp)
+
+	vp.finished.connect(func():
+		vp.queue_free()
+		_setup_level_fun()
+	)
+	vp.play()
+
+func _setup_level_fun():
+	is_transitioning = false
+	current_level = 52
+	_mark_level_visited(52)
+
+	# Настройка освещения и окружения Уровня Fun
+	var env_node = get_node_or_null("WorldEnvironment")
+	if env_node:
+		var env = Environment.new()
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.02, 0.02, 0.02)
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		# Умеренный естественный ambient, чтобы свет давали настоящие многочисленные лампы
+		env.ambient_light_color = Color(0.35, 0.32, 0.30)
+		env.ambient_light_energy = 0.35
+		env.tonemap_mode = Environment.TONE_MAPPER_ACES
+		env.tonemap_exposure = 1.05
+		env.glow_enabled = true
+		env.glow_intensity = 0.4
+		env.glow_bloom = 0.15
+		env_node.environment = env
+
+	var old_moon = get_node_or_null("EveningCityLight")
+	if old_moon:
+		old_moon.queue_free()
+
+	# Создаем генератор комнат и коридоров Level Fun
+	level_fun_generator = level_fun_script.new()
+	level_fun_generator.name = "LevelFunManager"
+	add_child(level_fun_generator)
+	level_fun_generator.setup(player)
+
+	if player:
+		player.is_active = true
+		if player.visual_root:
+			player.visual_root.visible = true
+		if player.head_shadow_mesh:
+			player.head_shadow_mesh.visible = true
+		if player.has_method("play_getup_cutscene"):
+			player.play_getup_cutscene()
 
 # Генерация бесконечного вечернего города Level 89
 # Каждый чанк ровно 16.0м х 16.0м состыкован по сетке:
